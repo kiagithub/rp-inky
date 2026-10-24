@@ -69,10 +69,12 @@ DEFAULT_CONFIG = {
     "refresh_minutes": 20,
     "display": {
         "rotate": 90,
-        "saturation": 0.8,
-        "color": 1.1,
-        "contrast": 1.05,
-        "brightness": 1.0,
+        # Spectra 6 sweet spot: 0.35 keeps skin tones realistic instead of
+        # blobbing, with contrast/brightness lifts to recover face detail.
+        "saturation": 0.35,
+        "color": 1.0,
+        "contrast": 1.25,
+        "brightness": 1.1,
     },
     "footer": {"height": 100},
     "fonts": {
@@ -493,8 +495,8 @@ def validate_config(config):
         rotate = 90
     display["rotate"] = rotate
     saturation = _as_float(display.get("saturation"))
-    display["saturation"] = 0.8 if saturation is None else min(1.0, max(0.0, saturation))
-    for key, default in (("color", 1.1), ("contrast", 1.05), ("brightness", 1.0)):
+    display["saturation"] = 0.35 if saturation is None else min(1.0, max(0.0, saturation))
+    for key, default in (("color", 1.0), ("contrast", 1.25), ("brightness", 1.1)):
         value = _as_float(display.get(key))
         display[key] = default if value is None else min(2.0, max(0.0, value))
 

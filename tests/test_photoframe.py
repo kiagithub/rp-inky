@@ -130,10 +130,10 @@ def test_load_config_defaults(tmp_path):
     config = pf.load_config(tmp_path / "config.json")
     assert config["refresh_minutes"] == 20
     assert config["display"]["rotate"] == 90
-    assert config["display"]["saturation"] == 0.8
-    assert config["display"]["color"] == 1.1
-    assert config["display"]["contrast"] == 1.05
-    assert config["display"]["brightness"] == 1.0
+    assert config["display"]["saturation"] == 0.35
+    assert config["display"]["color"] == 1.0
+    assert config["display"]["contrast"] == 1.25
+    assert config["display"]["brightness"] == 1.1
     assert config["footer"]["height"] == 100
     assert config["_image_dir"] == tmp_path / "image"
     assert config["_state_dir"] == tmp_path / ".state"
@@ -270,7 +270,7 @@ def test_show_frame_rotates_to_native(tmp_path):
     display = FakeDisplay()
     pf.show_frame(display, frame, config)
     assert display.image.size == (800, 480)
-    assert display.saturation == 0.8
+    assert display.saturation == 0.35
     assert display.shown is True
 
 
