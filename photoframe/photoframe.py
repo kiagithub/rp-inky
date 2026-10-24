@@ -69,7 +69,7 @@ DEFAULT_CONFIG = {
     "refresh_minutes": 20,
     "display": {"rotate": 90, "saturation": 0.5},
     "footer": {"height": 120, "outline": True},
-    "fonts": {"bold": "", "regular": "", "symbol": ""},
+    "fonts": {"bold": "", "regular": ""},
     "metadata": {
         "reverse_geocode": True,
         "coordinates_fallback": True,
@@ -100,63 +100,12 @@ REGULAR_FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/Library/Fonts/Arial.ttf",
 ]
-SYMBOL_FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
-    "/System/Library/Fonts/Apple Symbols.ttf",
-    "/Library/Fonts/Arial Unicode.ttf",
-]
 
 USER_AGENT = "rp-inky-photoframe/1.0 (+https://github.com/kiagithub/rp-inky)"
 HTTP_TIMEOUT = 15
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
-
-WMO_CONDITIONS = {
-    0: ("Clear", "clear"),
-    1: ("Mainly clear", "partly"),
-    2: ("Partly cloudy", "partly"),
-    3: ("Overcast", "cloudy"),
-    45: ("Fog", "fog"),
-    48: ("Fog", "fog"),
-    51: ("Drizzle", "drizzle"),
-    53: ("Drizzle", "drizzle"),
-    55: ("Drizzle", "drizzle"),
-    56: ("Icy drizzle", "drizzle"),
-    57: ("Icy drizzle", "drizzle"),
-    61: ("Rain", "rain"),
-    63: ("Rain", "rain"),
-    65: ("Rain", "rain"),
-    66: ("Freezing rain", "rain"),
-    67: ("Freezing rain", "rain"),
-    71: ("Snow", "snow"),
-    73: ("Snow", "snow"),
-    75: ("Snow", "snow"),
-    77: ("Snow grains", "snow"),
-    80: ("Showers", "rain"),
-    81: ("Showers", "rain"),
-    82: ("Showers", "rain"),
-    85: ("Snow showers", "snow"),
-    86: ("Snow showers", "snow"),
-    95: ("Thunderstorm", "thunder"),
-    96: ("Thunderstorm", "thunder"),
-    99: ("Thunderstorm", "thunder"),
-}
-
-# Monochrome weather glyphs available in both DejaVu Sans and Apple Symbols.
-# Escapes avoid ambiguous-Unicode lint warnings.
-WEATHER_SYMBOLS = {
-    "clear": ("☀", "☾"),
-    "partly": ("☁", "☁"),
-    "cloudy": ("☁", "☁"),
-    "fog": ("≋", "≋"),
-    "drizzle": ("☂", "☂"),
-    "rain": ("☔", "☔"),
-    "snow": ("☃", "☃"),
-    "thunder": ("☈", "☈"),
-    "unknown": ("☁", "☁"),
-}
 
 
 @dataclass
@@ -167,7 +116,6 @@ class PhotoMeta:
     lat: Optional[float] = None
     lon: Optional[float] = None
     place: Optional[str] = None
-    place_source: Optional[str] = None
 
 
 @dataclass
@@ -175,11 +123,6 @@ class Weather:
     """Current weather shown in the footer."""
 
     temperature: Optional[float] = None
-    condition: str = "No weather"
-    icon: str = "unknown"
-    is_day: bool = True
-    high: Optional[float] = None
-    low: Optional[float] = None
     fetched_at: Optional[str] = None
 
     @classmethod
@@ -197,11 +140,7 @@ class Fonts:
 
     place: Any
     date: Any
-    attribution: Any
     temp: Any
-    condition: Any
-    highlow: Any
-    weather_symbol: Any
     placeholder_title: Any
     placeholder_body: Any
     placeholder_path: Any
@@ -295,17 +234,12 @@ def load_fonts(config):
     """Load all fonts, preferring configured paths and then DejaVu."""
     bold_path = _first_existing([config["fonts"].get("bold"), *BOLD_FONT_CANDIDATES])
     regular_path = _first_existing([config["fonts"].get("regular"), *REGULAR_FONT_CANDIDATES])
-    symbol_path = _first_existing([config["fonts"].get("symbol"), *SYMBOL_FONT_CANDIDATES, regular_path])
     if bold_path is None or regular_path is None:
         LOG.warning("No TrueType font found; falling back to a very small built-in font")
     return Fonts(
-        place=_load_font(bold_path, 21),
-        date=_load_font(regular_path, 17),
-        attribution=_load_font(regular_path, 11),
-        temp=_load_font(bold_path, 32),
-        condition=_load_font(regular_path, 16),
-        highlow=_load_font(regular_path, 16),
-        weather_symbol=_load_font(symbol_path, 30),
+        place=_load_font(bold_path, 30),
+        date=_load_font(regular_path, 22),
+        temp=_load_font(bold_path, 60),
         placeholder_title=_load_font(bold_path, 30),
         placeholder_body=_load_font(regular_path, 17),
         placeholder_path=_load_font(regular_path, 15),
@@ -699,61 +633,21 @@ def resolve_weather_location(config, offline=False):
     return location
 
 
-def weather_code_info(code):
-    """Map a WMO weather code to (short label, icon key)."""
-    try:
-        code = int(code)
-    except (TypeError, ValueError):
-        return "Unknown", "unknown"
-    return WMO_CONDITIONS.get(code, ("Unknown", "unknown"))
-
-
-def weather_glyph(icon, is_day=True):
-    """Return the monochrome weather symbol for an icon key."""
-    day_symbol, night_symbol = WEATHER_SYMBOLS.get(icon, WEATHER_SYMBOLS["unknown"])
-    return day_symbol if is_day else night_symbol
-
-
-def _first_value(values):
-    if isinstance(values, (list, tuple)) and values:
-        return values[0]
-    return None
-
-
 def parse_weather(payload):
-    """Build a Weather from an Open-Meteo forecast response."""
+    """Build a Weather from an Open-Meteo response."""
     current = payload.get("current") if isinstance(payload, dict) else None
-    daily = payload.get("daily") if isinstance(payload, dict) else None
     current = current if isinstance(current, dict) else {}
-    daily = daily if isinstance(daily, dict) else {}
-
-    condition, icon = weather_code_info(current.get("weather_code"))
-    return Weather(
-        temperature=_as_float(current.get("temperature_2m")),
-        condition=condition,
-        icon=icon,
-        is_day=bool(current.get("is_day", 1)),
-        high=_as_float(_first_value(daily.get("temperature_2m_max"))),
-        low=_as_float(_first_value(daily.get("temperature_2m_min"))),
-    )
+    return Weather(temperature=_as_float(current.get("temperature_2m")))
 
 
 def fetch_weather(location, units="metric", timeout=HTTP_TIMEOUT):
-    """Fetch current conditions and today's high/low from Open-Meteo."""
-    if units == "imperial":
-        temperature_unit, wind_unit, precipitation_unit = "fahrenheit", "mph", "inch"
-    else:
-        temperature_unit, wind_unit, precipitation_unit = "celsius", "kmh", "mm"
+    """Fetch the current temperature from Open-Meteo."""
+    temperature_unit = "fahrenheit" if units == "imperial" else "celsius"
     params = {
         "latitude": f"{location['latitude']:.6f}",
         "longitude": f"{location['longitude']:.6f}",
-        "current": "temperature_2m,apparent_temperature,is_day,weather_code,precipitation,relative_humidity_2m,wind_speed_10m",
-        "daily": "temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset",
-        "timezone": "auto",
-        "forecast_days": 1,
+        "current": "temperature_2m",
         "temperature_unit": temperature_unit,
-        "wind_speed_unit": wind_unit,
-        "precipitation_unit": precipitation_unit,
     }
     weather = parse_weather(http_json(FORECAST_URL, params, timeout=timeout))
     weather.fetched_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -811,7 +705,7 @@ def get_weather(config, offline=False):
         LOG.warning("Using cached weather after fetch failure: %s", last_error)
         return cached
     LOG.error("Weather unavailable: %s", last_error)
-    return Weather(condition="No weather", icon="unknown")
+    return Weather()
 
 
 class PlaceResolver:
@@ -892,7 +786,6 @@ def build_photo_meta(photo_path, config, resolver):
         location = sidecar.get("location")
         if isinstance(location, str) and location.strip():
             meta.place = location.strip()
-            meta.place_source = "sidecar"
         sidecar_date = parse_exif_date(sidecar.get("date"))
         if sidecar_date is not None:
             meta.taken = sidecar_date
@@ -902,14 +795,11 @@ def build_photo_meta(photo_path, config, resolver):
             place = resolver.resolve(meta.lat, meta.lon)
             if place:
                 meta.place = place
-                meta.place_source = "nominatim"
         if not meta.place and config["metadata"].get("coordinates_fallback", True):
             meta.place = format_coordinates(meta.lat, meta.lon)
-            meta.place_source = "coordinates"
 
     if not meta.place and config["metadata"].get("show_unknown", False):
         meta.place = "Location unknown"
-        meta.place_source = "unknown"
     return meta
 
 
@@ -986,12 +876,24 @@ def draw_placeholder(image_dir, fonts):
 
 
 def draw_footer(image, meta, weather, config, fonts):
-    """Overlay the metadata/weather text on the bottom of a portrait frame."""
+    """Overlay the place, capture date and a large temperature on the photo."""
     height = int(config["footer"]["height"])
     if height <= 0:
         return
     top = HEIGHT - height
     outline = BLACK if config["footer"].get("outline", True) else None
+    text_color = YELLOW
+
+    unit = "°F" if config["weather"].get("units") == "imperial" else "°C"
+    temperature = (
+        f"{round(weather.temperature)}{unit}"
+        if weather is not None and weather.temperature is not None
+        else "--"
+    )
+
+    temp_width = text_width(fonts.temp, temperature)
+    temp_x = WIDTH - 26 - temp_width
+    left_max = max(180, temp_x - 26 - 16)
 
     if meta is not None:
         place = meta.place
@@ -1001,9 +903,9 @@ def draw_footer(image, meta, weather, config, fonts):
             paste_text(
                 image,
                 (26, top + 20),
-                truncate_text(place, fonts.place, 225),
+                truncate_text(place, fonts.place, left_max),
                 fonts.place,
-                WHITE,
+                text_color,
                 outline=outline,
             )
 
@@ -1013,46 +915,16 @@ def draw_footer(image, meta, weather, config, fonts):
         elif config["metadata"].get("show_unknown", False):
             date_text = "Date unknown"
         if date_text:
-            paste_text(image, (26, top + 62), date_text, fonts.date, WHITE, outline=outline)
+            paste_text(
+                image,
+                (26, top + 62),
+                truncate_text(date_text, fonts.date, left_max),
+                fonts.date,
+                text_color,
+                outline=outline,
+            )
 
-        if meta.place_source == "nominatim":
-            paste_text(image, (26, top + height - 16), "© OpenStreetMap", fonts.attribution, WHITE, outline=outline)
-
-    text_x = 266
-    if weather is None:
-        paste_text(
-            image,
-            (text_x, top + 50),
-            weather_glyph("unknown"),
-            fonts.weather_symbol,
-            WHITE,
-            outline=outline,
-        )
-        paste_text(image, (text_x + 40, top + 58), "No weather", fonts.condition, WHITE, outline=outline)
-        return
-
-    unit = "°F" if config["weather"].get("units") == "imperial" else "°C"
-    temperature = "--" if weather.temperature is None else f"{round(weather.temperature)}{unit}"
-    paste_text(image, (text_x, top + 14), temperature, fonts.temp, WHITE, outline=outline)
-    paste_text(
-        image,
-        (text_x, top + 50),
-        weather_glyph(weather.icon, weather.is_day),
-        fonts.weather_symbol,
-        WHITE,
-        outline=outline,
-    )
-    paste_text(
-        image,
-        (text_x + 40, top + 58),
-        truncate_text(weather.condition, fonts.condition, 150),
-        fonts.condition,
-        WHITE,
-        outline=outline,
-    )
-    if weather.high is not None and weather.low is not None:
-        high_low = f"H {round(weather.high)}°  L {round(weather.low)}°"
-        paste_text(image, (text_x + 40, top + 84), high_low, fonts.highlow, WHITE, outline=outline)
+    paste_text(image, (temp_x, top + 30), temperature, fonts.temp, text_color, outline=outline)
 
 
 def render_frame(photo_path, meta, weather, config, fonts):

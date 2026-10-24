@@ -91,41 +91,14 @@ def test_resolve_weather_location_uses_admin1(tmp_path, monkeypatch):
     assert location["admin1"] == "Virginia"
 
 
-def test_weather_code_info():
-    assert pf.weather_code_info(0) == ("Clear", "clear")
-    assert pf.weather_code_info(95) == ("Thunderstorm", "thunder")
-    assert pf.weather_code_info(61) == ("Rain", "rain")
-    assert pf.weather_code_info("not a code") == ("Unknown", "unknown")
-    assert pf.weather_code_info(1234) == ("Unknown", "unknown")
-
-
-def test_weather_glyph():
-    assert pf.weather_glyph("clear", True) == "☀"
-    assert pf.weather_glyph("clear", False) == "☾"
-    assert pf.weather_glyph("rain") == "☔"
-    assert pf.weather_glyph("unknown") == "☁"
-
-
 def test_parse_weather():
-    payload = {
-        "current": {"temperature_2m": 13.3, "is_day": 0, "weather_code": 53},
-        "daily": {"temperature_2m_max": [14.8], "temperature_2m_min": [6.4]},
-    }
-    weather = pf.parse_weather(payload)
+    weather = pf.parse_weather({"current": {"temperature_2m": 13.3}})
     assert weather.temperature == pytest.approx(13.3)
-    assert weather.condition == "Drizzle"
-    assert weather.icon == "drizzle"
-    assert weather.is_day is False
-    assert weather.high == pytest.approx(14.8)
-    assert weather.low == pytest.approx(6.4)
 
 
 def test_parse_weather_missing_fields():
     weather = pf.parse_weather({})
     assert weather.temperature is None
-    assert weather.condition == "Unknown"
-    assert weather.icon == "unknown"
-    assert weather.high is None and weather.low is None
 
 
 def test_read_photo_metadata(tmp_path):
@@ -234,8 +207,8 @@ def test_render_frame(tmp_path):
     make_photo(photo)
     config = pf.load_config(tmp_path / "config.json")
     fonts = pf.load_fonts(config)
-    meta = pf.PhotoMeta(taken=date(2024, 6, 14), place="Cambridge, GB", place_source="nominatim")
-    weather = pf.Weather(temperature=13.3, condition="Partly cloudy", icon="partly", is_day=True, high=15, low=6)
+    meta = pf.PhotoMeta(taken=date(2024, 6, 14), place="McLean, US")
+    weather = pf.Weather(temperature=13.3)
     frame = pf.render_frame(photo, meta, weather, config, fonts)
     assert frame.size == (480, 800)
     assert frame.getpixel((5, 795)) == pytest.approx((120, 80, 40), abs=3)
@@ -311,7 +284,6 @@ def test_sidecar_overrides_exif(tmp_path):
     config = pf.load_config(tmp_path / "config.json")
     meta = pf.build_photo_meta(photo, config, resolver=None)
     assert meta.place == "Paris, France"
-    assert meta.place_source == "sidecar"
     assert meta.taken == date(2024, 6, 14)
 
 
@@ -322,7 +294,6 @@ def test_coordinates_fallback(tmp_path):
     config["metadata"]["show_unknown"] = True
     meta = pf.build_photo_meta(photo, config, resolver=None)
     assert meta.place == "52.200, 0.117"
-    assert meta.place_source == "coordinates"
 
 
 def test_place_resolver_cache(tmp_path, monkeypatch):
@@ -360,9 +331,7 @@ def test_weather_uses_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(
         pf,
         "fetch_weather",
-        lambda location, units: pf.Weather(
-            temperature=10, condition="Clear", icon="clear", is_day=True, high=12, low=4
-        ),
+        lambda location, units: pf.Weather(temperature=10),
     )
     weather = pf.get_weather(config)
     assert weather.temperature == 10
@@ -374,7 +343,6 @@ def test_weather_uses_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(pf, "fetch_weather", fail)
     cached = pf.get_weather(config)
     assert cached.temperature == 10
-    assert cached.condition == "Clear"
 
 
 def test_offline_weather(tmp_path, monkeypatch):

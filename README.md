@@ -8,7 +8,7 @@ photo is chosen randomly each cycle (avoiding an immediate repeat when more than
 one photo is available). A footer
 overlaid on the bottom of each photo shows:
 
-- the current weather (Open-Meteo, no API key), with a weather symbol;
+- the current temperature (Open-Meteo, no API key);
 - where the photo was taken (EXIF GPS, reverse-geocoded to a place name);
 - when it was taken (EXIF capture date).
 
@@ -285,7 +285,7 @@ Quick reference:
 - rotation interval: `refresh_minutes` (default 20);
 - orientation: `display.rotate` (`90` default, `270` if upside down);
 - footer: `footer.height` (default 120 px, `0` hides it) and `footer.outline`
-  (default true — thin black outline around the white text);
+  (default true — thin black outline around the yellow text);
 - service: `inky-photoframe.service`.
 
 ## License

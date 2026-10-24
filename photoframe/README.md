@@ -6,7 +6,7 @@ every 20 minutes, with a footer showing the current weather and the photo's
 EXIF capture date and place.
 
 - Panel: 800 × 480 native, 6-colour Spectra, mounted vertically.
-- Weather: Open-Meteo — free, no API key, with a monochrome weather symbol.
+- Weather: Open-Meteo — free, no API key (temperature only).
 - Photo places: GPS EXIF reverse-geocoded with Nominatim/OpenStreetMap (cached, optional).
 - Random selection: avoids repeating the current photo when more than one is
   available; new files are picked up automatically.
@@ -95,13 +95,12 @@ Other useful settings:
 | `display.rotate` | `90` | `90` or `270`. Use `270` if the frame is upside down. |
 | `display.saturation` | `0.5` | 0–1 colour saturation. Lower is more muted. |
 | `footer.height` | `120` | Footer area height in pixels; `0` hides the footer. |
-| `footer.outline` | `true` | Thin black outline around the white footer text. |
+| `footer.outline` | `true` | Thin black outline around the yellow footer text. |
 | `metadata.reverse_geocode` | `true` | Look up place names from photo GPS. |
 | `metadata.coordinates_fallback` | `true` | Show coordinates if no place name is available. |
 | `metadata.show_unknown` | `false` | Show "Location unknown" / "Date unknown". |
 | `metadata.sidecar` | `image/metadata.json` | Optional per-photo overrides. |
 | `weather.admin1` | `Virginia` | State/region for ambiguous city names. |
-| `fonts.symbol` | `""` | Optional weather-symbol font; auto-detects DejaVu/Apple Symbols. |
 
 Paths in the config are resolved relative to `config.json`.
 
@@ -192,10 +191,11 @@ not accumulate drift.
 
 ## Photo metadata
 
-The footer is a weather symbol plus white text overlaid directly on the bottom
-120 px of the photo. A thin black outline keeps it readable on bright images;
-set `footer.outline` to `false` for plain white text. Adjust `footer.height`,
-or set it to `0` to hide the footer entirely.
+The footer shows the place and capture date, plus a large temperature, all in
+yellow and overlaid directly on the bottom 120 px of the photo. A thin black
+outline keeps it readable on bright images; set `footer.outline` to `false` for
+plain yellow text. Adjust `footer.height`, or set it to `0` to hide the footer
+entirely.
 
 The footer shows:
 
@@ -228,10 +228,9 @@ are sent to OpenStreetMap's Nominatim service to obtain a place name. Set it to
 `false` to keep coordinates local (the frame then shows the coordinates).
 
 Reverse-geocoded place names use data © OpenStreetMap contributors, available
-under the Open Data Commons Open Database License (ODbL).
-A small `© OpenStreetMap` line is drawn in the footer when such a name is
-shown. Requests use a descriptive User-Agent and are limited to one per new
-photo.
+under the Open Data Commons Open Database License (ODbL). Requests use a
+descriptive User-Agent and are limited to one per new photo. The frame itself
+does not draw a copyright line.
 
 ## Troubleshooting
 
