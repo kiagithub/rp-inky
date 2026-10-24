@@ -101,7 +101,7 @@ REGULAR_FONT_CANDIDATES = [
     "/Library/Fonts/Arial.ttf",
 ]
 
-USER_AGENT = "inky-photoframe/1.0 (+https://github.com/pimoroni/inky)"
+USER_AGENT = "rp-inky-photoframe/1.0 (+https://github.com/kiagithub/rp-inky)"
 HTTP_TIMEOUT = 15
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"

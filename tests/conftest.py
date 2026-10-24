@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-
 from tools import MockSMBus
 
 # Make the repository root importable for application-level tests (photoframe).

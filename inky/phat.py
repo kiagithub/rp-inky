@@ -1,14 +1,4 @@
-"""
-`Inky pHAT`_ class and methods.
-
-A getting started `tutorial`_ for the Inky pHAT is available on the pimoroni website.
-
-The `pinout`_ for the Inky pHAT is documented on pinout.xyz
-
-.. _`Inky pHAT`: https://shop.pimoroni.com/products/inky-phat
-.. _`tutorial`: https://learn.pimoroni.com/tutorial/sandyj/getting-started-with-inky-phat
-.. _`pinout`: https://pinout.xyz/pinout/inky_phat
-"""
+"""Inky pHAT e-Ink display driver."""
 from . import inky, inky_ssd1608
 
 

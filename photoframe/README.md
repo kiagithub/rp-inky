@@ -1,4 +1,4 @@
-# Inky Impression 7.3" photo frame
+# rp-inky photo frame
 
 A headless digital photo frame for the **Inky Impression 7.3" (PIM773)** on
 Raspberry Pi OS Lite. Photos are shown in portrait (480 × 800), rotated every
@@ -6,20 +6,20 @@ Raspberry Pi OS Lite. Photos are shown in portrait (480 × 800), rotated every
 capture date and place.
 
 - Panel: 800 × 480 native, 6-colour Spectra, mounted vertically.
-- Weather: [Open-Meteo](https://open-meteo.com/) — free, no API key.
-- Photo places: GPS EXIF reverse-geocoded with [Nominatim/OpenStreetMap](https://nominatim.openstreetmap.org/) (cached, optional).
+- Weather: Open-Meteo — free, no API key.
+- Photo places: GPS EXIF reverse-geocoded with Nominatim/OpenStreetMap (cached, optional).
 - No current clock is shown; the only date on screen is when the photo was taken.
 
 ## Requirements
 
-- Raspberry Pi (any model supported by Inky) running **Raspberry Pi OS Lite**
-  Bookworm or later.
+- Raspberry Pi supported by the driver in this repo, running **Raspberry Pi OS
+  Lite** Bookworm or later.
 - Inky Impression 7.3" connected to the 40-pin header.
-- The repo's Inky library installed, with I2C and SPI enabled:
+- The driver in this repo installed, with I2C and SPI enabled:
 
 ```bash
-git clone https://github.com/pimoroni/inky
-cd inky
+git clone https://github.com/kiagithub/rp-inky.git
+cd rp-inky
 ./install.sh
 ```
 
@@ -203,7 +203,7 @@ are sent to OpenStreetMap's Nominatim service to obtain a place name. Set it to
 `false` to keep coordinates local (the frame then shows the coordinates).
 
 Reverse-geocoded place names use data © OpenStreetMap contributors, available
-under the [Open Data Commons Open Database License](https://www.openstreetmap.org/copyright).
+under the Open Data Commons Open Database License (ODbL).
 A small `© OpenStreetMap` line is drawn in the footer when such a name is
 shown. Requests use a descriptive User-Agent and are limited to one per new
 photo.
@@ -217,7 +217,7 @@ the panel is detected:
 
 ```bash
 source ~/.virtualenvs/pimoroni/bin/activate
-python examples/identify.py
+python -c "from inky.auto import auto; print(auto())"
 ```
 
 **Permission errors on `/dev/spidev*` or `/dev/gpiochip*`.**
@@ -232,13 +232,9 @@ Set `"display": {"rotate": 270}` in `config.json` and restart the service. The
 default `90` assumes the panel was rotated clockwise into portrait.
 
 **No weather is shown.**
-Check that `weather.location` is set and that the Pi has DNS/network access.
-Weather failures are cached and logged; the frame continues to work offline.
-To test the API from the Pi:
-
-```bash
-curl "https://api.open-meteo.com/v1/forecast?latitude=52.2&longitude=0.12&current=temperature_2m"
-```
+Check that `weather.location` is set and that the Pi has DNS/network access to
+the Open-Meteo service. Weather failures are cached and logged; the frame
+continues to work offline.
 
 **No place is shown.**
 The photo may have no GPS EXIF, or reverse geocoding failed. Add a sidecar entry
