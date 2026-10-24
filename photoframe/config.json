@@ -15,12 +15,11 @@
   "fonts": {
     "bold": "",
     "regular": "",
-    "symbol": "",
     "sizes": {
-      "place": 34,
-      "date": 28,
-      "temperature": 84,
-      "symbol": 56
+      "place": 26,
+      "date": 21,
+      "temperature": 63,
+      "symbol": 42
     }
   },
   "metadata": {

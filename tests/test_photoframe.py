@@ -106,11 +106,13 @@ def test_parse_weather_missing_fields():
     assert weather.is_day is None
 
 
-def test_weather_glyph():
-    assert pf.weather_glyph("clear", True) == "☀"
-    assert pf.weather_glyph("clear", False) == "☾"
-    assert pf.weather_glyph("rain") == "☔"
-    assert pf.weather_glyph("unknown") == "☁"
+def test_icon_mask():
+    icons = ("clear", "partly", "cloudy", "fog", "drizzle", "rain", "snow", "thunder", "unknown")
+    for icon in icons:
+        mask = pf.icon_mask(icon, True, 42)
+        assert mask.size == (42, 42)
+        assert mask.getextrema()[1] == 255  # something was drawn
+    assert pf.icon_mask("clear", False, 42).getextrema()[1] == 255  # night crescent
 
 
 def test_weather_code_info():
@@ -153,10 +155,10 @@ def test_load_config_defaults(tmp_path):
     assert config["display"]["contrast"] == 1.25
     assert config["display"]["brightness"] == 1.1
     assert config["footer"]["height"] == 140
-    assert config["fonts"]["sizes"]["place"] == 34
-    assert config["fonts"]["sizes"]["date"] == 28
-    assert config["fonts"]["sizes"]["temperature"] == 84
-    assert config["fonts"]["sizes"]["symbol"] == 56
+    assert config["fonts"]["sizes"]["place"] == 26
+    assert config["fonts"]["sizes"]["date"] == 21
+    assert config["fonts"]["sizes"]["temperature"] == 63
+    assert config["fonts"]["sizes"]["symbol"] == 42
     assert config["_image_dir"] == tmp_path / "image"
     assert config["_state_dir"] == tmp_path / ".state"
     assert config["_sidecar"] == tmp_path / "image" / "metadata.json"
@@ -239,7 +241,7 @@ def test_render_frame(tmp_path):
     assert frame.size == (480, 800)
     # No black banner: the photo shows through the bottom band...
     assert frame.getpixel((5, 795)) != (0, 0, 0)
-    # ...and the yellow overlay text and glyph are drawn over the photo.
+    # ...and the yellow overlay text and weather symbol are drawn over the photo.
     band = frame.crop((0, pf.HEIGHT - config["footer"]["height"], pf.WIDTH, pf.HEIGHT))
     colors = {color for _, color in band.getcolors(maxcolors=1000000)}
     assert (255, 255, 0) in colors
@@ -255,7 +257,7 @@ def test_font_sizes_are_configurable_and_clamped(tmp_path):
     sizes = config["fonts"]["sizes"]
     assert sizes["place"] == 200  # clamped from above
     assert sizes["date"] == 8  # clamped from below
-    assert sizes["temperature"] == 84  # invalid value falls back to the default
+    assert sizes["temperature"] == 63  # invalid value falls back to the default
     fonts = pf.load_fonts(config)
     if hasattr(fonts.place, "size"):
         assert fonts.place.size == 200

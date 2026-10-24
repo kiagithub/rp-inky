@@ -13,6 +13,7 @@ import argparse
 import copy
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -80,8 +81,8 @@ DEFAULT_CONFIG = {
     "fonts": {
         "bold": "",
         "regular": "",
-        "symbol": "",
-        "sizes": {"place": 34, "date": 28, "temperature": 84, "symbol": 56},
+        # sizes.symbol sets the size of the drawn weather symbol.
+        "sizes": {"place": 26, "date": 21, "temperature": 63, "symbol": 42},
     },
     "metadata": {
         "reverse_geocode": True,
@@ -112,12 +113,6 @@ REGULAR_FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/Library/Fonts/Arial.ttf",
-]
-SYMBOL_FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
-    "/System/Library/Fonts/Apple Symbols.ttf",
-    "/Library/Fonts/Arial Unicode.ttf",
 ]
 
 # WMO weather codes returned by Open-Meteo, mapped to a label and icon key.
@@ -152,19 +147,9 @@ WMO_CONDITIONS = {
     99: ("Thunderstorm", "thunder"),
 }
 
-# Monochrome weather glyphs available in DejaVu Sans; the Spectra 6 palette
-# has no way to show colour emoji, so symbols are pasted like the other text.
-WEATHER_SYMBOLS = {
-    "clear": ("☀", "☾"),
-    "partly": ("☁", "☁"),
-    "cloudy": ("☁", "☁"),
-    "fog": ("≋", "≋"),
-    "drizzle": ("☂", "☂"),
-    "rain": ("☔", "☔"),
-    "snow": ("☃", "☃"),
-    "thunder": ("☈", "☈"),
-    "unknown": ("☁", "☁"),
-}
+# Weather symbols are drawn from shapes (see icon_mask): the fonts installed
+# on the Pi do not carry the Unicode weather glyphs, which rendered as an
+# empty box, and the Spectra 6 palette could not show colour emoji anyway.
 
 USER_AGENT = "rp-inky-photoframe/1.0 (+https://github.com/kiagithub/rp-inky)"
 HTTP_TIMEOUT = 15
@@ -208,7 +193,6 @@ class Fonts:
     place: Any
     date: Any
     temp: Any
-    symbol: Any
     placeholder_title: Any
     placeholder_body: Any
     placeholder_path: Any
@@ -309,10 +293,104 @@ def weather_code_info(code):
     return WMO_CONDITIONS.get(code, ("Unknown", "unknown"))
 
 
-def weather_glyph(icon, is_day=True):
-    """Return the monochrome weather symbol for an icon key."""
-    day_symbol, night_symbol = WEATHER_SYMBOLS.get(icon, WEATHER_SYMBOLS["unknown"])
-    return day_symbol if is_day else night_symbol
+def icon_mask(icon, is_day=True, size=42):
+    """Render a weather symbol as a hard-edged 1-bit mask.
+
+    The symbols are drawn from PIL shapes rather than font glyphs because
+    the fonts available on the Pi do not carry the Unicode weather glyphs
+    (they rendered as an empty box).
+    """
+    size = max(8, int(size))
+    mask = Image.new("L", (size, size), 0)
+    draw = ImageDraw.Draw(mask)
+
+    def cloud(x, y, w):
+        """Draw a cloud with its bounding box top-left at (x, y)."""
+        r = w * 0.24
+        h = w * 0.62
+        draw.ellipse([x, y + h - 2 * r, x + 2 * r, y + h], fill=255)
+        draw.ellipse([x + w - 2 * r, y + h - 2 * r, x + w, y + h], fill=255)
+        draw.ellipse([x + w * 0.28, y, x + w * 0.28 + 2 * r, y + 2 * r], fill=255)
+        draw.rectangle([x + r, y + h - r, x + w - r, y + h], fill=255)
+
+    def sun(cx, cy, r):
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
+        inner = r + max(2.0, size * 0.05)
+        outer = r + max(4.0, size * 0.16)
+        for i in range(8):
+            angle = math.pi * i / 4
+            draw.line(
+                [
+                    cx + inner * math.cos(angle),
+                    cy + inner * math.sin(angle),
+                    cx + outer * math.cos(angle),
+                    cy + outer * math.sin(angle),
+                ],
+                fill=255,
+                width=max(2, size // 14),
+            )
+
+    def drops(y0, y1):
+        for i in range(3):
+            x = size * (0.32 + 0.18 * i)
+            draw.line([x, y0, x + size * 0.05, y1], fill=255, width=max(2, size // 12))
+
+    if icon == "clear":
+        if is_day:
+            sun(size / 2, size / 2, size * 0.22)
+        else:  # crescent moon: a disc with an offset disc cut out
+            r = size * 0.26
+            draw.ellipse([size / 2 - r, size / 2 - r, size / 2 + r, size / 2 + r], fill=255)
+            cut = size * 0.75
+            draw.ellipse([cut - r, cut - r, cut + r, cut + r], fill=0)
+    elif icon == "partly":
+        if is_day:
+            sun(size * 0.34, size * 0.32, size * 0.14)
+        cloud(size * 0.24, size * 0.36, size * 0.62)
+    elif icon == "cloudy":
+        cloud(size * 0.16, size * 0.26, size * 0.68)
+    elif icon == "fog":
+        cloud(size * 0.16, size * 0.12, size * 0.68)
+        for i in range(3):
+            y = size * (0.68 + 0.14 * i)
+            draw.line([size * 0.16, y, size * 0.84, y], fill=255, width=max(2, size // 12))
+    elif icon == "drizzle":
+        cloud(size * 0.16, size * 0.08, size * 0.68)
+        drops(size * 0.60, size * 0.76)
+    elif icon == "rain":
+        cloud(size * 0.16, size * 0.04, size * 0.68)
+        drops(size * 0.56, size * 0.94)
+    elif icon == "snow":
+        cloud(size * 0.16, size * 0.08, size * 0.68)
+        r = max(2, size // 14)
+        for i in range(3):
+            x = size * (0.34 + 0.16 * i)
+            draw.ellipse([x - r, size * 0.82 - r, x + r, size * 0.82 + r], fill=255)
+    elif icon == "thunder":
+        cloud(size * 0.16, size * 0.04, size * 0.68)
+        draw.polygon(
+            [
+                (size * 0.48, size * 0.52),
+                (size * 0.30, size * 0.78),
+                (size * 0.42, size * 0.78),
+                (size * 0.32, size * 0.98),
+                (size * 0.64, size * 0.62),
+                (size * 0.52, size * 0.62),
+                (size * 0.60, size * 0.52),
+            ],
+            fill=255,
+        )
+    else:  # unknown
+        cloud(size * 0.16, size * 0.26, size * 0.68)
+    return mask
+
+
+def paste_icon(canvas, xy, icon, is_day, size, fill, shadow=0, shadow_fill=BLACK):
+    """Paste a drawn weather symbol onto the canvas in a palette colour."""
+    mask = icon_mask(icon, is_day, size)
+    if shadow:
+        canvas.paste(shadow_fill, (xy[0] + shadow, xy[1] + shadow), mask)
+    canvas.paste(fill, xy, mask)
 
 
 def load_fonts(config):
@@ -323,9 +401,6 @@ def load_fonts(config):
     """
     bold_path = _first_existing([config["fonts"].get("bold"), *BOLD_FONT_CANDIDATES])
     regular_path = _first_existing([config["fonts"].get("regular"), *REGULAR_FONT_CANDIDATES])
-    symbol_path = _first_existing(
-        [config["fonts"].get("symbol"), *SYMBOL_FONT_CANDIDATES, regular_path]
-    )
     if bold_path is None or regular_path is None:
         LOG.warning("No TrueType font found; using a small fallback. Install fonts-dejavu-core.")
     sizes = config["fonts"].get("sizes") if isinstance(config["fonts"], dict) else None
@@ -338,10 +413,9 @@ def load_fonts(config):
             return default
 
     return Fonts(
-        place=_load_font(bold_path, _size("place", 34)),
-        date=_load_font(regular_path, _size("date", 28)),
-        temp=_load_font(bold_path, _size("temperature", 84)),
-        symbol=_load_font(symbol_path, _size("symbol", 56)),
+        place=_load_font(bold_path, _size("place", 26)),
+        date=_load_font(regular_path, _size("date", 21)),
+        temp=_load_font(bold_path, _size("temperature", 63)),
         placeholder_title=_load_font(bold_path, 30),
         placeholder_body=_load_font(regular_path, 17),
         placeholder_path=_load_font(regular_path, 15),
@@ -590,7 +664,7 @@ def validate_config(config):
     sizes = fonts_config.get("sizes")
     if not isinstance(sizes, dict):
         sizes = {}
-    for key, default in (("place", 34), ("date", 28), ("temperature", 84), ("symbol", 56)):
+    for key, default in (("place", 26), ("date", 21), ("temperature", 63), ("symbol", 42)):
         try:
             size = int(sizes.get(key, default))
         except (TypeError, ValueError):
@@ -1000,10 +1074,12 @@ def draw_placeholder(image_dir, fonts):
 
 
 def draw_overlay(image, meta, weather, config, fonts):
-    """Overlay location/date and temperature directly over the photo.
+    """Overlay location/date, temperature and a weather symbol over the photo.
 
-    There is no banner: the text is pasted onto the photo itself, with a
-    small black drop shadow so it stays legible over light areas.
+    There is no banner: place and date stack on two lines at the bottom
+    left, the weather symbol and temperature sit at the bottom right, and
+    everything is pasted onto the photo itself with a small black drop
+    shadow so it stays legible over light areas.
     """
     height = int(config["footer"]["height"])
     if height <= 0:
@@ -1016,22 +1092,22 @@ def draw_overlay(image, meta, weather, config, fonts):
         if weather is not None and weather.temperature is not None
         else "--"
     )
-    glyph = ""
+    icon = None
+    is_day = True
     if weather is not None and weather.code is not None:
         _, icon = weather_code_info(weather.code)
-        glyph = weather_glyph(icon, weather.is_day is not False)
+        is_day = weather.is_day is not False
     temp_width = text_width(fonts.temp, temperature)
     temp_height = text_metrics(fonts.temp, temperature)[1]
     shadow = 2
 
-    # Right-align the glyph + temperature group against the right margin.
-    glyph_width = text_width(fonts.symbol, glyph) if glyph else 0
+    # Right-align the icon + temperature group against the right margin.
     right = WIDTH - 26
-    if glyph:
-        glyph_height = text_metrics(fonts.symbol, glyph)[1]
-        glyph_y = top + (height - glyph_height) // 2
-        paste_text(image, (right - glyph_width, glyph_y), glyph, fonts.symbol, YELLOW, shadow=shadow)
-        right -= glyph_width + 14
+    if icon:
+        icon_size = min(int(config["fonts"]["sizes"].get("symbol", 42)), height)
+        icon_y = top + (height - icon_size) // 2
+        paste_icon(image, (right - icon_size, icon_y), icon, is_day, icon_size, YELLOW, shadow=shadow)
+        right -= icon_size + 14
     temp_x = right - temp_width
     temp_y = top + (height - temp_height) // 2
 
@@ -1047,27 +1123,20 @@ def draw_overlay(image, meta, weather, config, fonts):
             date_text = "Date unknown"
 
         left_max = max(80, temp_x - 26 - 16)
-        line_height = max(text_metrics(fonts.place, "Mg")[1], text_metrics(fonts.date, "Mg")[1])
-        line_y = top + (height - line_height) // 2
+        place_height = text_metrics(fonts.place, "Mg")[1]
+        date_height = text_metrics(fonts.date, "Mg")[1]
+        gap = 4
 
-        if place and date_text:
-            suffix = " · " + date_text
-            place_max = max(60, left_max - text_width(fonts.date, suffix))
-            place_text = truncate_text(place, fonts.place, place_max)
-            paste_text(image, (26, line_y), place_text, fonts.place, YELLOW, shadow=shadow)
-            paste_text(
-                image,
-                (26 + text_width(fonts.place, place_text), line_y),
-                suffix,
-                fonts.date,
-                YELLOW,
-                shadow=shadow,
-            )
-        elif place:
-            place_text = truncate_text(place, fonts.place, left_max)
-            paste_text(image, (26, line_y), place_text, fonts.place, YELLOW, shadow=shadow)
-        elif date_text:
-            paste_text(image, (26, line_y), date_text, fonts.date, YELLOW, shadow=shadow)
+        # Place and date stack on two lines, centred in the bottom band.
+        both = bool(place and date_text)
+        block_height = place_height + gap + date_height if both else max(place_height, date_height)
+        block_y = top + (height - block_height) // 2
+
+        if place:
+            paste_text(image, (26, block_y), truncate_text(place, fonts.place, left_max), fonts.place, YELLOW, shadow=shadow)
+        if date_text:
+            date_y = block_y + place_height + gap if both else block_y
+            paste_text(image, (26, date_y), truncate_text(date_text, fonts.date, left_max), fonts.date, YELLOW, shadow=shadow)
 
     paste_text(image, (temp_x, temp_y), temperature, fonts.temp, YELLOW, shadow=shadow)
 
