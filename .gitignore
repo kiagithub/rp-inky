@@ -30,3 +30,7 @@ packaging/*tar.xz
 sphinx.virtualenv
 .venv
 uv.lock
+photoframe/config.json
+photoframe/.state/
+photoframe/image/*
+!photoframe/image/.gitkeep

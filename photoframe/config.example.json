@@ -1,0 +1,29 @@
+{
+  "image_dir": "image",
+  "state_dir": ".state",
+  "refresh_minutes": 20,
+  "display": {
+    "rotate": 90,
+    "saturation": 0.5
+  },
+  "footer": {
+    "height": 120
+  },
+  "fonts": {
+    "bold": "",
+    "regular": ""
+  },
+  "metadata": {
+    "reverse_geocode": true,
+    "coordinates_fallback": true,
+    "show_unknown": false,
+    "sidecar": "image/metadata.json"
+  },
+  "weather": {
+    "location": "",
+    "country_code": "",
+    "units": "metric",
+    "retries": 3,
+    "retry_delay_seconds": 10
+  }
+}
