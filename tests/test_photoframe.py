@@ -215,7 +215,28 @@ def test_render_frame(tmp_path):
     weather = pf.Weather(temperature=13.3)
     frame = pf.render_frame(photo, meta, weather, config, fonts)
     assert frame.size == (480, 800)
-    assert frame.getpixel((5, 795)) == (0, 0, 0)
+    # No black banner: the photo shows through the bottom band...
+    assert frame.getpixel((5, 795)) != (0, 0, 0)
+    # ...and the yellow overlay text is drawn over the photo.
+    band = frame.crop((0, pf.HEIGHT - config["footer"]["height"], pf.WIDTH, pf.HEIGHT))
+    colors = {color for _, color in band.getcolors(maxcolors=1000000)}
+    assert (255, 255, 0) in colors
+
+
+def test_font_sizes_are_configurable_and_clamped(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps({"fonts": {"sizes": {"place": 400, "date": 2, "temperature": "big"}}}),
+        encoding="utf-8",
+    )
+    config = pf.load_config(path)
+    sizes = config["fonts"]["sizes"]
+    assert sizes["place"] == 200  # clamped from above
+    assert sizes["date"] == 8  # clamped from below
+    assert sizes["temperature"] == 64  # invalid value falls back to the default
+    fonts = pf.load_fonts(config)
+    if hasattr(fonts.place, "size"):
+        assert fonts.place.size == 200
 
 
 def test_render_placeholder(tmp_path):

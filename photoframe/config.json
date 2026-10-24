@@ -14,7 +14,12 @@
   },
   "fonts": {
     "bold": "",
-    "regular": ""
+    "regular": "",
+    "sizes": {
+      "place": 28,
+      "date": 24,
+      "temperature": 64
+    }
   },
   "metadata": {
     "reverse_geocode": true,

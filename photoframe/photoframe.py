@@ -3,8 +3,8 @@
 
 Displays 480x800 portrait photos on a PIM773 Inky Impression 7.3"
 (800x480 native, 6-colour Spectra) and rotates them every 20 minutes.
-A black footer overlaid on the bottom of each photo shows the current
-weather and the photo's EXIF capture date and place.
+The current weather and the photo's EXIF capture date and place are drawn
+directly over the bottom of each photo (no banner).
 
 Designed to run headless on Raspberry Pi OS Lite under systemd.
 """
@@ -75,7 +75,11 @@ DEFAULT_CONFIG = {
         "brightness": 1.0,
     },
     "footer": {"height": 100},
-    "fonts": {"bold": "", "regular": ""},
+    "fonts": {
+        "bold": "",
+        "regular": "",
+        "sizes": {"place": 28, "date": 24, "temperature": 64},
+    },
     "metadata": {
         "reverse_geocode": True,
         "coordinates_fallback": True,
@@ -186,12 +190,18 @@ def text_mask(text, font):
     return mask.point(lambda pixel: 255 if pixel >= 128 else 0)
 
 
-def paste_text(canvas, xy, text, font, fill):
-    """Paste crisp text onto the canvas in a solid palette colour."""
+def paste_text(canvas, xy, text, font, fill, shadow=0, shadow_fill=BLACK):
+    """Paste crisp text onto the canvas in a solid palette colour.
+
+    A positive shadow offset first pastes the same mask in shadow_fill,
+    offset down and to the right, so text stays readable over photos.
+    """
     if not text:
         return
     mask = text_mask(text, font)
     if mask is not None:
+        if shadow:
+            canvas.paste(shadow_fill, (xy[0] + shadow, xy[1] + shadow), mask)
         canvas.paste(fill, xy, mask)
 
 
@@ -232,15 +242,28 @@ def _load_font(path, size):
 
 
 def load_fonts(config):
-    """Load all fonts, preferring configured paths and then DejaVu."""
+    """Load all fonts, preferring configured paths and then DejaVu.
+
+    Point sizes come from fonts.sizes in the config so they can be tuned
+    without touching code.
+    """
     bold_path = _first_existing([config["fonts"].get("bold"), *BOLD_FONT_CANDIDATES])
     regular_path = _first_existing([config["fonts"].get("regular"), *REGULAR_FONT_CANDIDATES])
     if bold_path is None or regular_path is None:
         LOG.warning("No TrueType font found; using a tiny fallback. Install fonts-dejavu-core.")
+    sizes = config["fonts"].get("sizes") if isinstance(config["fonts"], dict) else None
+    sizes = sizes if isinstance(sizes, dict) else {}
+
+    def _size(key, default):
+        try:
+            return int(sizes.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
     return Fonts(
-        place=_load_font(bold_path, 20),
-        date=_load_font(regular_path, 18),
-        temp=_load_font(bold_path, 44),
+        place=_load_font(bold_path, _size("place", 28)),
+        date=_load_font(regular_path, _size("date", 24)),
+        temp=_load_font(bold_path, _size("temperature", 64)),
         placeholder_title=_load_font(bold_path, 30),
         placeholder_body=_load_font(regular_path, 17),
         placeholder_path=_load_font(regular_path, 15),
@@ -485,7 +508,17 @@ def validate_config(config):
         footer_height = 100
     footer["height"] = max(0, min(footer_height, 300))
 
-    _ensure_dict(config, "fonts")
+    fonts_config = _ensure_dict(config, "fonts")
+    sizes = fonts_config.get("sizes")
+    if not isinstance(sizes, dict):
+        sizes = {}
+    for key, default in (("place", 28), ("date", 24), ("temperature", 64)):
+        try:
+            size = int(sizes.get(key, default))
+        except (TypeError, ValueError):
+            size = default
+        sizes[key] = min(200, max(8, size))
+    fonts_config["sizes"] = sizes
 
     metadata = _ensure_dict(config, "metadata")
     for key in ("reverse_geocode", "coordinates_fallback", "show_unknown"):
@@ -878,14 +911,16 @@ def draw_placeholder(image_dir, fonts):
     return image
 
 
-def draw_footer(image, meta, weather, config, fonts):
-    """Draw a single-line black banner with location/date and temperature."""
+def draw_overlay(image, meta, weather, config, fonts):
+    """Overlay location/date and temperature directly over the photo.
+
+    There is no banner: the text is pasted onto the photo itself, with a
+    small black drop shadow so it stays legible over light areas.
+    """
     height = int(config["footer"]["height"])
     if height <= 0:
         return
     top = HEIGHT - height
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((0, top, WIDTH, HEIGHT), fill=BLACK)
 
     unit = "°F" if config["weather"].get("units") == "imperial" else "°C"
     temperature = (
@@ -897,6 +932,7 @@ def draw_footer(image, meta, weather, config, fonts):
     temp_height = text_metrics(fonts.temp, temperature)[1]
     temp_x = WIDTH - 26 - temp_width
     temp_y = top + (height - temp_height) // 2
+    shadow = 2
 
     if meta is not None:
         place = meta.place
@@ -917,21 +953,22 @@ def draw_footer(image, meta, weather, config, fonts):
             suffix = " · " + date_text
             place_max = max(60, left_max - text_width(fonts.date, suffix))
             place_text = truncate_text(place, fonts.place, place_max)
-            paste_text(image, (26, line_y), place_text, fonts.place, YELLOW)
+            paste_text(image, (26, line_y), place_text, fonts.place, YELLOW, shadow=shadow)
             paste_text(
                 image,
                 (26 + text_width(fonts.place, place_text), line_y),
                 suffix,
                 fonts.date,
                 YELLOW,
+                shadow=shadow,
             )
         elif place:
             place_text = truncate_text(place, fonts.place, left_max)
-            paste_text(image, (26, line_y), place_text, fonts.place, YELLOW)
+            paste_text(image, (26, line_y), place_text, fonts.place, YELLOW, shadow=shadow)
         elif date_text:
-            paste_text(image, (26, line_y), date_text, fonts.date, YELLOW)
+            paste_text(image, (26, line_y), date_text, fonts.date, YELLOW, shadow=shadow)
 
-    paste_text(image, (temp_x, temp_y), temperature, fonts.temp, YELLOW)
+    paste_text(image, (temp_x, temp_y), temperature, fonts.temp, YELLOW, shadow=shadow)
 
 
 def enhance_photo(image, config):
@@ -954,7 +991,7 @@ def render_frame(photo_path, meta, weather, config, fonts):
         image = fit_photo(photo_path)
         if image is not None:
             image = enhance_photo(image, config)
-            draw_footer(image, meta, weather, config, fonts)
+            draw_overlay(image, meta, weather, config, fonts)
             return image
     return draw_placeholder(config["_image_dir"], fonts)
 
