@@ -5,11 +5,17 @@ that might otherwise have runtime side-effects.
 
 """
 import sys
+from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from tools import MockSMBus
+
+# Make the repository root importable for application-level tests (photoframe).
+# Appended rather than prepended so tests/tools.py keeps priority over the
+# repository's tools/ directory.
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 
 @pytest.fixture(scope='function', autouse=True)

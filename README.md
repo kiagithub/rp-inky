@@ -8,6 +8,7 @@
 Python library for [Inky pHAT](https://shop.pimoroni.com/products/inky-phat), [Inky wHAT](https://shop.pimoroni.com/products/inky-what) and [Inky Impression](https://shop.pimoroni.com/?q=inky+impression) e-paper displays for Raspberry Pi.
 
 - [Get Inky](#get-inky)
+- [Photo frame](#photo-frame)
 - [Installation](#installation)
   - [Full install (recommended)](#full-install-recommended)
   - [Development](#development)
@@ -29,6 +30,10 @@ Python library for [Inky pHAT](https://shop.pimoroni.com/products/inky-phat), [I
 [Inky wHAT](https://shop.pimoroni.com/products/inky-what) is a 400x300 pixel e-paper display available in red/black/white, yellow/black/white and black/white. It's got tons of resolution for detailed daily to-do lists, multi-day weather forecasts, bus timetables and more.
 
 [Inky Impression](https://shop.pimoroni.com/search?q=inky%20impression) is our line of glorious colour eInk displays, available in various sizes from the petite 4.0" up to the mighty 13.3". They're packed with strong colours and perfect for displaying striking graphics or lots of data.
+
+## Photo frame
+
+This repo includes a ready-to-run [Inky Impression 7.3" digital photo frame](photoframe/README.md). It shows portrait 480x800 photos with a weather and EXIF date/place footer, rotates them every 20 minutes, and installs as a systemd service that starts at boot on Raspberry Pi OS Lite.
 
 ## Installation
 

@@ -1,0 +1,17 @@
+[Unit]
+Description=Inky Impression 7.3 photo frame
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+SupplementaryGroups=__GROUPS__
+WorkingDirectory=__APP_DIR__
+ExecStart=__VENV__/bin/python __APP_DIR__/photoframe.py --config __APP_DIR__/config.json
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
