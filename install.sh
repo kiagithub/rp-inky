@@ -32,6 +32,12 @@ fi
 "$PYTHON" -m pip install "$REPO_DIR"
 
 echo
+if [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf ]; then
+    echo "Installing DejaVu fonts..."
+    sudo apt-get update
+    sudo apt-get install -y fonts-dejavu-core || echo "Warning: could not install fonts-dejavu-core; footer text may use a tiny fallback font."
+fi
+
 echo "Enabling I2C and SPI..."
 if command -v raspi-config >/dev/null 2>&1; then
     sudo raspi-config nonint do_i2c 0 || echo "Warning: could not enable I2C; enable it with raspi-config."

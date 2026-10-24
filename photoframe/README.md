@@ -94,7 +94,7 @@ Other useful settings:
 | `refresh_minutes` | `20` | Minutes between photo changes. |
 | `display.rotate` | `90` | `90` or `270`. Use `270` if the frame is upside down. |
 | `display.saturation` | `0.5` | 0–1 colour saturation. Lower is more muted. |
-| `footer.height` | `120` | Footer area height in pixels; `0` hides the footer. |
+| `footer.height` | `220` | Footer area height in pixels; `0` hides it, otherwise minimum 220. |
 | `footer.outline` | `true` | Thin black outline around the yellow footer text. |
 | `metadata.reverse_geocode` | `true` | Look up place names from photo GPS. |
 | `metadata.coordinates_fallback` | `true` | Show coordinates if no place name is available. |
@@ -192,7 +192,7 @@ not accumulate drift.
 ## Photo metadata
 
 The footer shows the place and capture date, plus a large temperature, all in
-yellow and overlaid directly on the bottom 120 px of the photo. A thin black
+yellow and overlaid directly on the bottom 220 px of the photo. A thin black
 outline keeps it readable on bright images; set `footer.outline` to `false` for
 plain yellow text. Adjust `footer.height`, or set it to `0` to hide the footer
 entirely.

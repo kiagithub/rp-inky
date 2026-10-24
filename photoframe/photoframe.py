@@ -68,7 +68,7 @@ DEFAULT_CONFIG = {
     "state_dir": ".state",
     "refresh_minutes": 20,
     "display": {"rotate": 90, "saturation": 0.5},
-    "footer": {"height": 120, "outline": True},
+    "footer": {"height": 220, "outline": True},
     "fonts": {"bold": "", "regular": ""},
     "metadata": {
         "reverse_geocode": True,
@@ -235,11 +235,11 @@ def load_fonts(config):
     bold_path = _first_existing([config["fonts"].get("bold"), *BOLD_FONT_CANDIDATES])
     regular_path = _first_existing([config["fonts"].get("regular"), *REGULAR_FONT_CANDIDATES])
     if bold_path is None or regular_path is None:
-        LOG.warning("No TrueType font found; falling back to a very small built-in font")
+        LOG.warning("No TrueType font found; using a tiny fallback. Install fonts-dejavu-core.")
     return Fonts(
-        place=_load_font(bold_path, 30),
-        date=_load_font(regular_path, 22),
-        temp=_load_font(bold_path, 60),
+        place=_load_font(bold_path, 48),
+        date=_load_font(regular_path, 36),
+        temp=_load_font(bold_path, 120),
         placeholder_title=_load_font(bold_path, 30),
         placeholder_body=_load_font(regular_path, 17),
         placeholder_path=_load_font(regular_path, 15),
@@ -473,12 +473,12 @@ def validate_config(config):
 
     footer = _ensure_dict(config, "footer")
     try:
-        footer_height = int(footer.get("height", 120))
+        footer_height = int(footer.get("height", 220))
     except (TypeError, ValueError):
-        footer_height = 120
-    if footer_height != 0 and footer_height < 100:
-        LOG.warning("footer.height must be 0 or at least 100; using 120")
-        footer_height = 120
+        footer_height = 220
+    if footer_height != 0 and footer_height < 220:
+        LOG.warning("footer.height must be 0 or at least 220; using 220")
+        footer_height = 220
     footer["height"] = max(0, min(footer_height, 400))
     footer["outline"] = bool(footer.get("outline", True))
 
@@ -893,7 +893,8 @@ def draw_footer(image, meta, weather, config, fonts):
 
     temp_width = text_width(fonts.temp, temperature)
     temp_x = WIDTH - 26 - temp_width
-    left_max = max(180, temp_x - 26 - 16)
+    temp_height = text_metrics(fonts.temp, temperature)[1]
+    temp_y = top + height - temp_height - 10
 
     if meta is not None:
         place = meta.place
@@ -903,7 +904,7 @@ def draw_footer(image, meta, weather, config, fonts):
             paste_text(
                 image,
                 (26, top + 20),
-                truncate_text(place, fonts.place, left_max),
+                truncate_text(place, fonts.place, WIDTH - 52),
                 fonts.place,
                 text_color,
                 outline=outline,
@@ -917,14 +918,14 @@ def draw_footer(image, meta, weather, config, fonts):
         if date_text:
             paste_text(
                 image,
-                (26, top + 62),
-                truncate_text(date_text, fonts.date, left_max),
+                (26, top + 70),
+                truncate_text(date_text, fonts.date, WIDTH - 52),
                 fonts.date,
                 text_color,
                 outline=outline,
             )
 
-    paste_text(image, (temp_x, top + 30), temperature, fonts.temp, text_color, outline=outline)
+    paste_text(image, (temp_x, temp_y), temperature, fonts.temp, text_color, outline=outline)
 
 
 def render_frame(photo_path, meta, weather, config, fonts):

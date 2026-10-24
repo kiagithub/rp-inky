@@ -158,7 +158,7 @@ def test_load_config_overrides_and_validation(tmp_path):
     assert config["refresh_minutes"] == 5
     assert config["display"]["rotate"] == 270
     assert config["display"]["saturation"] == 1.0
-    assert config["footer"]["height"] == 120  # 40 is too small, falls back
+    assert config["footer"]["height"] == 220  # 40 is too small, falls back
     assert config["weather"]["units"] == "imperial"
     assert config["weather"]["retry_delay_seconds"] == 0.0
     assert config["_image_dir"] == tmp_path / "photos"
