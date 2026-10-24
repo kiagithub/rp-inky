@@ -162,11 +162,19 @@ def test_list_images_and_choose_next(tmp_path):
         (tmp_path / name).write_bytes(b"placeholder")
     images = pf.list_images(tmp_path)
     assert [path.name for path in images] == ["A.PNG", "b.jpg"]
-    assert pf.choose_next(images).name == "A.PNG"
+    assert pf.choose_next(images).name in {"A.PNG", "b.jpg"}
     assert pf.choose_next(images, "A.PNG").name == "b.jpg"
     assert pf.choose_next(images, "b.jpg").name == "A.PNG"
-    assert pf.choose_next(images, "gone.jpg").name == "A.PNG"
+    assert pf.choose_next(images, "gone.jpg").name in {"A.PNG", "b.jpg"}
+    assert pf.choose_next([images[0]], "A.PNG").name == "A.PNG"
     assert pf.choose_next([]) is None
+
+
+def test_new_photos_are_picked_up(tmp_path):
+    make_photo(tmp_path / "one.jpg")
+    assert [path.name for path in pf.list_images(tmp_path)] == ["one.jpg"]
+    make_photo(tmp_path / "two.jpg")
+    assert [path.name for path in pf.list_images(tmp_path)] == ["one.jpg", "two.jpg"]
 
 
 def test_state_round_trip(tmp_path):
@@ -246,12 +254,15 @@ def test_run_cycle_displays_and_advances(tmp_path):
     state = config["_state_dir"] / "state.json"
 
     pf.run_cycle(config, args, fonts, None, display)
+    first = pf.read_last_image(state)
+    assert first in {"a.jpg", "b.jpg"}
     assert display.shown is True
     assert display.image.size == (800, 480)
-    assert pf.read_last_image(state) == "a.jpg"
 
     pf.run_cycle(config, args, fonts, None, display)
-    assert pf.read_last_image(state) == "b.jpg"
+    second = pf.read_last_image(state)
+    assert second in {"a.jpg", "b.jpg"}
+    assert second != first
 
 
 def test_sidecar_overrides_exif(tmp_path):

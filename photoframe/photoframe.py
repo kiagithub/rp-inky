@@ -14,6 +14,7 @@ import copy
 import json
 import logging
 import os
+import random
 import re
 import signal
 import sys
@@ -882,17 +883,13 @@ def list_images(image_dir):
 
 
 def choose_next(images, last_name=None):
-    """Choose the photo after last_name, wrapping around."""
+    """Pick a random photo, avoiding an immediate repeat."""
     if not images:
         return None
-    if last_name:
-        names = [path.name for path in images]
-        try:
-            index = names.index(last_name)
-        except ValueError:
-            index = -1
-        return images[(index + 1) % len(images)]
-    return images[0]
+    candidates = [path for path in images if path.name != last_name]
+    if not candidates:
+        candidates = images
+    return random.choice(candidates)
 
 
 def read_last_image(state_path):
@@ -1060,6 +1057,7 @@ def _wait_until(deadline, stop_event):
 def run_cycle(config, args, fonts, resolver, display):
     """Choose, compose and display one frame."""
     images = list_images(config["_image_dir"])
+    LOG.info("Found %d photo(s) in %s", len(images), config["_image_dir"])
     state_path = config["_state_dir"] / "state.json"
     photo = choose_next(images, read_last_image(state_path))
 

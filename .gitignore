@@ -14,5 +14,6 @@ dist/
 
 photoframe/config.json
 photoframe/.state/
+photoframe/source/
 photoframe/image/*
 !photoframe/image/.gitkeep

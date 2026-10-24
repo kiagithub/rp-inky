@@ -1,13 +1,15 @@
 # rp-inky photo frame
 
 A headless digital photo frame for the **Inky Impression 7.3" (PIM773)** on
-Raspberry Pi OS Lite. Photos are shown in portrait (480 × 800), rotated every
-20 minutes, with a footer showing the current weather and the photo's EXIF
-capture date and place.
+Raspberry Pi OS Lite. Photos are shown in portrait (480 × 800), chosen randomly
+every 20 minutes, with a footer showing the current weather and the photo's
+EXIF capture date and place.
 
 - Panel: 800 × 480 native, 6-colour Spectra, mounted vertically.
 - Weather: Open-Meteo — free, no API key.
 - Photo places: GPS EXIF reverse-geocoded with Nominatim/OpenStreetMap (cached, optional).
+- Random selection: avoids repeating the current photo when more than one is
+  available; new files are picked up automatically.
 - No current clock is shown; the only date on screen is when the photo was taken.
 
 ## Requirements
@@ -153,9 +155,18 @@ sudo systemctl stop inky-photoframe
 sudo systemctl disable --now inky-photoframe
 ```
 
-Photos are re-scanned every cycle, so you can add or remove files in
-`photoframe/image/` without restarting. The frame shows a friendly
-"No photos yet" screen when the folder is empty.
+Photos are re-scanned every cycle and a random photo is chosen, avoiding the one
+currently displayed when more than one is available. You can add or remove files
+in `photoframe/image/` without restarting; new files enter the pool on the next
+20-minute refresh. To force an immediate refresh, restart the service. The frame
+shows a friendly "No photos yet" screen when the folder is empty.
+
+To import many photos at once, see
+[Add many photos at once](../README.md#add-many-photos-at-once) in the root
+README.
+
+The service is enabled at boot and keeps its configuration, photos and state on
+disk, so a reboot or power cut needs no repeated setup.
 
 `config.json` is read at startup; restart the service after changing it:
 

@@ -3,7 +3,9 @@
 A Raspberry Pi e-ink digital photo frame for the **Inky Impression 7.3" (PIM773)**.
 
 The panel is mounted in portrait: photos are composed at **480 × 800**, rotated
-to the panel's native 800 × 480 size, and changed every **20 minutes**. A footer
+to the panel's native 800 × 480 size, and changed every **20 minutes**. A new
+photo is chosen randomly each cycle (avoiding an immediate repeat when more than
+one photo is available). A footer
 overlaid on the bottom of each photo shows:
 
 - the current weather (Open-Meteo, no API key);
@@ -11,6 +13,10 @@ overlaid on the bottom of each photo shows:
 - when it was taken (EXIF capture date).
 
 `main` is the release branch.
+
+![Example rp-inky output](docs/screenshot.png)
+
+*Example output (480 × 800 portrait; synthetic sample photo).*
 
 ## Requirements
 
@@ -84,23 +90,22 @@ ssh pi@raspberrypi.local
 
 Replace `pi` and `raspberrypi.local` with your username and hostname/IP.
 
-### 2. Put the code on the Pi
+### 2. Clone the code on the Pi
 
-The repository is private. The simplest route is to copy the working tree from
-the Mac with `rsync` (run from the Mac, in the repo directory):
-
-```bash
-rsync -av --progress \
-  --exclude '.git' --exclude '.venv' --exclude '__pycache__' \
-  --exclude 'photoframe/config.json' --exclude 'photoframe/.state' \
-  ./ pi@raspberrypi.local:~/rp-inky/
-```
-
-Alternatively, clone on the Pi using an SSH key registered with GitHub:
+The repository is public, so clone it directly on the Pi:
 
 ```bash
 ssh pi@raspberrypi.local
-git clone git@github.com:kiagithub/rp-inky.git
+git clone https://github.com/kiagithub/rp-inky.git
+cd rp-inky
+```
+
+To update an existing checkout later:
+
+```bash
+cd ~/rp-inky
+git pull
+sudo systemctl restart inky-photoframe
 ```
 
 ### 3. Install and configure
@@ -116,7 +121,7 @@ sudo apt install -y python3-venv git rsync
 
 source ~/.virtualenvs/pimoroni/bin/activate
 
-# If you did not copy prepared photos with rsync:
+# Add photos (optional; see "Add many photos at once" below):
 python photoframe/prepare_images.py ~/Pictures
 
 cp photoframe/config.example.json photoframe/config.json
@@ -152,6 +157,83 @@ without a restart, and can be restarted after config changes:
 sudo systemctl restart inky-photoframe
 ```
 
+## Add many photos at once
+
+To copy a folder of originals from the Mac to the Pi and convert it into the
+album:
+
+```bash
+# On the Mac
+rsync -av --progress ~/Pictures/Holiday/ pi@raspberrypi.local:~/rp-inky/photoframe/source/
+
+# On the Pi
+ssh pi@raspberrypi.local
+cd ~/rp-inky
+source ~/.virtualenvs/pimoroni/bin/activate
+python photoframe/prepare_images.py photoframe/source
+```
+
+`prepare_images.py` centre-crops the originals to 480 × 800 and preserves their
+EXIF date/GPS. Add `--force` to overwrite files that already exist in the album.
+
+If the photos are already 480 × 800, copy them straight into the album:
+
+```bash
+# On the Mac
+rsync -av --progress ~/Pictures/prepared/ pi@raspberrypi.local:~/rp-inky/photoframe/image/
+```
+
+`photoframe/source/` is a staging folder and is ignored by git.
+
+## Random selection and live updates
+
+At the start of every cycle the app re-scans `photoframe/image/` and picks a
+random photo, excluding the one currently on screen. This means:
+
+- new photos added while the frame is running are in the pool on the next
+  20-minute refresh;
+- removed photos disappear from the pool automatically;
+- no restart is needed.
+
+To force a refresh immediately after copying photos:
+
+```bash
+sudo systemctl restart inky-photoframe
+```
+
+The service log reports the number of photos found each cycle:
+
+```bash
+sudo journalctl -u inky-photoframe -f
+```
+
+## Reboots and power loss
+
+Once the service is installed, a reboot or power cut does not require any
+repeated setup:
+
+- `install-service.sh` enables `inky-photoframe.service` at boot;
+- `config.json`, the photo album, state and caches live on disk under
+  `photoframe/`;
+- the I2C/SPI overlays are written to `/boot/firmware/config.txt`;
+- the virtualenv lives in `~/.virtualenvs/pimoroni`;
+- the last-photo state is written atomically, so a power cut cannot leave a
+  half-written state file.
+
+Verify the unit is enabled and survives a reboot:
+
+```bash
+systemctl is-enabled inky-photoframe     # prints: enabled
+sudo reboot
+
+# after reconnecting
+sudo systemctl status inky-photoframe
+```
+
+If the network is not ready at boot, the app retries weather requests, then
+falls back to cached data; no interactive setup is needed. The first e-ink
+refresh after boot can take around 30 seconds.
+
 ## Configuration and operation
 
 See [photoframe/README.md](photoframe/README.md) for all settings, EXIF/sidecar
@@ -161,6 +243,7 @@ config template is [photoframe/config.example.json](photoframe/config.example.js
 Quick reference:
 
 - photos: `photoframe/image/` (480 × 800, or convert with `prepare_images.py`);
+  chosen randomly each cycle, with new files picked up automatically;
 - weather city: `weather.location` in `photoframe/config.json`;
 - rotation interval: `refresh_minutes` (default 20);
 - orientation: `display.rotate` (`90` default, `270` if upside down);
