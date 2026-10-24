@@ -10,15 +10,17 @@
     "brightness": 1.1
   },
   "footer": {
-    "height": 100
+    "height": 140
   },
   "fonts": {
     "bold": "",
     "regular": "",
+    "symbol": "",
     "sizes": {
-      "place": 28,
-      "date": 24,
-      "temperature": 64
+      "place": 34,
+      "date": 28,
+      "temperature": 84,
+      "symbol": 56
     }
   },
   "metadata": {

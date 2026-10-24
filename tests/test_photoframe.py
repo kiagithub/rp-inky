@@ -92,13 +92,31 @@ def test_resolve_weather_location_uses_admin1(tmp_path, monkeypatch):
 
 
 def test_parse_weather():
-    weather = pf.parse_weather({"current": {"temperature_2m": 13.3}})
+    payload = {"current": {"temperature_2m": 13.3, "weather_code": 3, "is_day": 1}}
+    weather = pf.parse_weather(payload)
     assert weather.temperature == pytest.approx(13.3)
+    assert weather.code == 3
+    assert weather.is_day is True
 
 
 def test_parse_weather_missing_fields():
     weather = pf.parse_weather({})
     assert weather.temperature is None
+    assert weather.code is None
+    assert weather.is_day is None
+
+
+def test_weather_glyph():
+    assert pf.weather_glyph("clear", True) == "☀"
+    assert pf.weather_glyph("clear", False) == "☾"
+    assert pf.weather_glyph("rain") == "☔"
+    assert pf.weather_glyph("unknown") == "☁"
+
+
+def test_weather_code_info():
+    assert pf.weather_code_info(0) == ("Clear sky", "clear")
+    assert pf.weather_code_info(63) == ("Rain", "rain")
+    assert pf.weather_code_info(1234) == ("Unknown", "unknown")
 
 
 def test_read_photo_metadata(tmp_path):
@@ -134,7 +152,11 @@ def test_load_config_defaults(tmp_path):
     assert config["display"]["color"] == 1.0
     assert config["display"]["contrast"] == 1.25
     assert config["display"]["brightness"] == 1.1
-    assert config["footer"]["height"] == 100
+    assert config["footer"]["height"] == 140
+    assert config["fonts"]["sizes"]["place"] == 34
+    assert config["fonts"]["sizes"]["date"] == 28
+    assert config["fonts"]["sizes"]["temperature"] == 84
+    assert config["fonts"]["sizes"]["symbol"] == 56
     assert config["_image_dir"] == tmp_path / "image"
     assert config["_state_dir"] == tmp_path / ".state"
     assert config["_sidecar"] == tmp_path / "image" / "metadata.json"
@@ -162,7 +184,7 @@ def test_load_config_overrides_and_validation(tmp_path):
     assert config["refresh_minutes"] == 5
     assert config["display"]["rotate"] == 270
     assert config["display"]["saturation"] == 1.0
-    assert config["footer"]["height"] == 100  # 40 is too small, falls back
+    assert config["footer"]["height"] == 140  # 40 is too small, falls back
     assert config["weather"]["units"] == "imperial"
     assert config["weather"]["retry_delay_seconds"] == 0.0
     assert config["_image_dir"] == tmp_path / "photos"
@@ -212,12 +234,12 @@ def test_render_frame(tmp_path):
     config = pf.load_config(tmp_path / "config.json")
     fonts = pf.load_fonts(config)
     meta = pf.PhotoMeta(taken=date(2024, 6, 14), place="McLean, US")
-    weather = pf.Weather(temperature=13.3)
+    weather = pf.Weather(temperature=13.3, code=63, is_day=True)
     frame = pf.render_frame(photo, meta, weather, config, fonts)
     assert frame.size == (480, 800)
     # No black banner: the photo shows through the bottom band...
     assert frame.getpixel((5, 795)) != (0, 0, 0)
-    # ...and the yellow overlay text is drawn over the photo.
+    # ...and the yellow overlay text and glyph are drawn over the photo.
     band = frame.crop((0, pf.HEIGHT - config["footer"]["height"], pf.WIDTH, pf.HEIGHT))
     colors = {color for _, color in band.getcolors(maxcolors=1000000)}
     assert (255, 255, 0) in colors
@@ -233,7 +255,7 @@ def test_font_sizes_are_configurable_and_clamped(tmp_path):
     sizes = config["fonts"]["sizes"]
     assert sizes["place"] == 200  # clamped from above
     assert sizes["date"] == 8  # clamped from below
-    assert sizes["temperature"] == 64  # invalid value falls back to the default
+    assert sizes["temperature"] == 84  # invalid value falls back to the default
     fonts = pf.load_fonts(config)
     if hasattr(fonts.place, "size"):
         assert fonts.place.size == 200

@@ -76,11 +76,12 @@ DEFAULT_CONFIG = {
         "contrast": 1.25,
         "brightness": 1.1,
     },
-    "footer": {"height": 100},
+    "footer": {"height": 140},
     "fonts": {
         "bold": "",
         "regular": "",
-        "sizes": {"place": 28, "date": 24, "temperature": 64},
+        "symbol": "",
+        "sizes": {"place": 34, "date": 28, "temperature": 84, "symbol": 56},
     },
     "metadata": {
         "reverse_geocode": True,
@@ -112,6 +113,58 @@ REGULAR_FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/Library/Fonts/Arial.ttf",
 ]
+SYMBOL_FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
+    "/System/Library/Fonts/Apple Symbols.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
+]
+
+# WMO weather codes returned by Open-Meteo, mapped to a label and icon key.
+WMO_CONDITIONS = {
+    0: ("Clear sky", "clear"),
+    1: ("Mainly clear", "partly"),
+    2: ("Partly cloudy", "partly"),
+    3: ("Overcast", "cloudy"),
+    45: ("Fog", "fog"),
+    48: ("Fog", "fog"),
+    51: ("Drizzle", "drizzle"),
+    53: ("Drizzle", "drizzle"),
+    55: ("Drizzle", "drizzle"),
+    56: ("Icy drizzle", "drizzle"),
+    57: ("Icy drizzle", "drizzle"),
+    61: ("Rain", "rain"),
+    63: ("Rain", "rain"),
+    65: ("Rain", "rain"),
+    66: ("Freezing rain", "rain"),
+    67: ("Freezing rain", "rain"),
+    71: ("Snow", "snow"),
+    73: ("Snow", "snow"),
+    75: ("Snow", "snow"),
+    77: ("Snow grains", "snow"),
+    80: ("Showers", "rain"),
+    81: ("Showers", "rain"),
+    82: ("Showers", "rain"),
+    85: ("Snow showers", "snow"),
+    86: ("Snow showers", "snow"),
+    95: ("Thunderstorm", "thunder"),
+    96: ("Thunderstorm", "thunder"),
+    99: ("Thunderstorm", "thunder"),
+}
+
+# Monochrome weather glyphs available in DejaVu Sans; the Spectra 6 palette
+# has no way to show colour emoji, so symbols are pasted like the other text.
+WEATHER_SYMBOLS = {
+    "clear": ("☀", "☾"),
+    "partly": ("☁", "☁"),
+    "cloudy": ("☁", "☁"),
+    "fog": ("≋", "≋"),
+    "drizzle": ("☂", "☂"),
+    "rain": ("☔", "☔"),
+    "snow": ("☃", "☃"),
+    "thunder": ("☈", "☈"),
+    "unknown": ("☁", "☁"),
+}
 
 USER_AGENT = "rp-inky-photoframe/1.0 (+https://github.com/kiagithub/rp-inky)"
 HTTP_TIMEOUT = 15
@@ -135,6 +188,8 @@ class Weather:
     """Current weather shown in the footer."""
 
     temperature: Optional[float] = None
+    code: Optional[int] = None
+    is_day: Optional[bool] = None
     fetched_at: Optional[str] = None
 
     @classmethod
@@ -153,6 +208,7 @@ class Fonts:
     place: Any
     date: Any
     temp: Any
+    symbol: Any
     placeholder_title: Any
     placeholder_body: Any
     placeholder_path: Any
@@ -240,7 +296,23 @@ def _load_font(path, size):
             return ImageFont.truetype(path, size)
         except OSError:
             LOG.warning("Could not load font %s; using the default font", path)
-    return ImageFont.load_default()
+    try:
+        # Pillow >= 10.1 returns a scalable default font for a given size,
+        # so text stays readable even when no TrueType font is installed.
+        return ImageFont.load_default(size)
+    except TypeError:
+        return ImageFont.load_default()
+
+
+def weather_code_info(code):
+    """Return (label, icon key) for a WMO weather code."""
+    return WMO_CONDITIONS.get(code, ("Unknown", "unknown"))
+
+
+def weather_glyph(icon, is_day=True):
+    """Return the monochrome weather symbol for an icon key."""
+    day_symbol, night_symbol = WEATHER_SYMBOLS.get(icon, WEATHER_SYMBOLS["unknown"])
+    return day_symbol if is_day else night_symbol
 
 
 def load_fonts(config):
@@ -251,8 +323,11 @@ def load_fonts(config):
     """
     bold_path = _first_existing([config["fonts"].get("bold"), *BOLD_FONT_CANDIDATES])
     regular_path = _first_existing([config["fonts"].get("regular"), *REGULAR_FONT_CANDIDATES])
+    symbol_path = _first_existing(
+        [config["fonts"].get("symbol"), *SYMBOL_FONT_CANDIDATES, regular_path]
+    )
     if bold_path is None or regular_path is None:
-        LOG.warning("No TrueType font found; using a tiny fallback. Install fonts-dejavu-core.")
+        LOG.warning("No TrueType font found; using a small fallback. Install fonts-dejavu-core.")
     sizes = config["fonts"].get("sizes") if isinstance(config["fonts"], dict) else None
     sizes = sizes if isinstance(sizes, dict) else {}
 
@@ -263,9 +338,10 @@ def load_fonts(config):
             return default
 
     return Fonts(
-        place=_load_font(bold_path, _size("place", 28)),
-        date=_load_font(regular_path, _size("date", 24)),
-        temp=_load_font(bold_path, _size("temperature", 64)),
+        place=_load_font(bold_path, _size("place", 34)),
+        date=_load_font(regular_path, _size("date", 28)),
+        temp=_load_font(bold_path, _size("temperature", 84)),
+        symbol=_load_font(symbol_path, _size("symbol", 56)),
         placeholder_title=_load_font(bold_path, 30),
         placeholder_body=_load_font(regular_path, 17),
         placeholder_path=_load_font(regular_path, 15),
@@ -502,19 +578,19 @@ def validate_config(config):
 
     footer = _ensure_dict(config, "footer")
     try:
-        footer_height = int(footer.get("height", 100))
+        footer_height = int(footer.get("height", 140))
     except (TypeError, ValueError):
-        footer_height = 100
+        footer_height = 140
     if footer_height != 0 and footer_height < 80:
-        LOG.warning("footer.height must be 0 or at least 80; using 100")
-        footer_height = 100
+        LOG.warning("footer.height must be 0 or at least 80; using 140")
+        footer_height = 140
     footer["height"] = max(0, min(footer_height, 300))
 
     fonts_config = _ensure_dict(config, "fonts")
     sizes = fonts_config.get("sizes")
     if not isinstance(sizes, dict):
         sizes = {}
-    for key, default in (("place", 28), ("date", 24), ("temperature", 64)):
+    for key, default in (("place", 34), ("date", 28), ("temperature", 84), ("symbol", 56)):
         try:
             size = int(sizes.get(key, default))
         except (TypeError, ValueError):
@@ -675,16 +751,26 @@ def parse_weather(payload):
     """Build a Weather from an Open-Meteo response."""
     current = payload.get("current") if isinstance(payload, dict) else None
     current = current if isinstance(current, dict) else {}
-    return Weather(temperature=_as_float(current.get("temperature_2m")))
+    code = current.get("weather_code")
+    is_day = current.get("is_day")
+    try:
+        code = int(code) if code is not None else None
+    except (TypeError, ValueError):
+        code = None
+    return Weather(
+        temperature=_as_float(current.get("temperature_2m")),
+        code=code,
+        is_day=bool(is_day) if is_day is not None else None,
+    )
 
 
 def fetch_weather(location, units="metric", timeout=HTTP_TIMEOUT):
-    """Fetch the current temperature from Open-Meteo."""
+    """Fetch the current temperature and weather code from Open-Meteo."""
     temperature_unit = "fahrenheit" if units == "imperial" else "celsius"
     params = {
         "latitude": f"{location['latitude']:.6f}",
         "longitude": f"{location['longitude']:.6f}",
-        "current": "temperature_2m",
+        "current": "temperature_2m,weather_code,is_day",
         "temperature_unit": temperature_unit,
     }
     weather = parse_weather(http_json(FORECAST_URL, params, timeout=timeout))
@@ -930,11 +1016,24 @@ def draw_overlay(image, meta, weather, config, fonts):
         if weather is not None and weather.temperature is not None
         else "--"
     )
+    glyph = ""
+    if weather is not None and weather.code is not None:
+        _, icon = weather_code_info(weather.code)
+        glyph = weather_glyph(icon, weather.is_day is not False)
     temp_width = text_width(fonts.temp, temperature)
     temp_height = text_metrics(fonts.temp, temperature)[1]
-    temp_x = WIDTH - 26 - temp_width
-    temp_y = top + (height - temp_height) // 2
     shadow = 2
+
+    # Right-align the glyph + temperature group against the right margin.
+    glyph_width = text_width(fonts.symbol, glyph) if glyph else 0
+    right = WIDTH - 26
+    if glyph:
+        glyph_height = text_metrics(fonts.symbol, glyph)[1]
+        glyph_y = top + (height - glyph_height) // 2
+        paste_text(image, (right - glyph_width, glyph_y), glyph, fonts.symbol, YELLOW, shadow=shadow)
+        right -= glyph_width + 14
+    temp_x = right - temp_width
+    temp_y = top + (height - temp_height) // 2
 
     if meta is not None:
         place = meta.place
