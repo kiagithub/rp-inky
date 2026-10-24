@@ -67,9 +67,7 @@ class InkyMock(inky.Inky):
         ylw_inky_palette = [255, 255, 255,  # 0 = white
                             0, 0, 0,  # 1 = black
                             223, 204, 16]  # index 2 is yellow
-        # yellow color value: screen capture from
-        # https://www.thoughtsmakethings.com/Pimoroni-Inky-pHAT
-
+        # yellow colour sampled from the panel
         self.c_palette = {"black": bw_inky_palette,
                           "red": red_inky_palette,
                           "yellow": ylw_inky_palette,

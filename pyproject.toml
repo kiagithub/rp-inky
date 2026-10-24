@@ -1,107 +1,59 @@
 [build-system]
-requires = ["hatchling", "hatch-fancy-pypi-readme", "hatch-requirements-txt", "uv-dynamic-versioning"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "inky"
-dynamic = ["version", "readme", "optional-dependencies"]
-description = "Inky pHAT Driver"
+name = "rp-inky"
+version = "1.0.0"
+description = "A Raspberry Pi e-ink photo frame for the Inky Impression 7.3"
+readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">= 3.9"
+requires-python = ">=3.9"
 authors = [
-    { name = "Philip Howard", email = "phil@pimoroni.com" },
-]
-maintainers = [
-    { name = "Philip Howard", email = "phil@pimoroni.com" },
+    { name = "kiagithub" },
 ]
 keywords = [
     "Raspberry Pi",
     "e-paper",
-]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3 :: Only",
-    "Topic :: Software Development",
-    "Topic :: Software Development :: Libraries",
-    "Topic :: System :: Hardware",
+    "photo frame",
 ]
 dependencies = [
     "numpy",
     "pillow",
     "smbus2",
     "spidev",
-    "gpiodevice>=0.1.0"
+    "gpiodevice>=0.1.0",
 ]
 
-[tool.hatch.metadata.hooks.requirements_txt.optional-dependencies]
-example-depends = ["requirements-examples.txt"]
-
 [project.urls]
-GitHub = "https://www.github.com/pimoroni/inky"
-Homepage = "https://www.pimoroni.com"
+GitHub = "https://github.com/kiagithub/rp-inky"
 
 [dependency-groups]
 dev = [
-    "check-manifest",
+    "pytest",
     "ruff==0.15.20",
     "codespell",
-    "pre-commit",
-    "twine",
-    "hatch",
-    "hatch-fancy-pypi-readme",
-    "hatch-requirements-txt",
-    "uv-dynamic-versioning",
-    "tox",
-    "pdoc",
 ]
 
-[tool.hatch.version]
-source = "uv-dynamic-versioning"
-
-[tool.uv-dynamic-versioning]
-fallback-version = "0.0.0"
-
-[tool.hatch.build]
-include = [
-    "inky",
-    "requirements-examples.txt"
-]
+[tool.hatch.build.targets.wheel]
+packages = ["inky"]
 
 [tool.hatch.build.targets.sdist]
-include = [
-    "*"
-]
+include = ["*"]
 exclude = [
     ".*",
+    "build",
     "dist",
-    "uv.lock"
-]
-
-[tool.hatch.metadata.hooks.fancy-pypi-readme]
-content-type = "text/markdown"
-fragments = [
-  { path = "README.md" },
-  { text = "\n" },
-  { path = "CHANGELOG.md" }
+    "*.egg-info",
 ]
 
 [tool.ruff]
 exclude = [
-    '.tox',
-    '.egg',
-    '.git',
-    '__pycache__',
-    'build',
-    'dist'
+    ".git",
+    "__pycache__",
+    ".venv",
+    "build",
+    "dist",
 ]
 line-length = 200
 
@@ -109,37 +61,4 @@ line-length = 200
 extend-select = ["I", "UP", "SIM", "PIE", "C4", "B", "RUF", "PERF", "FURB", "PLE"]
 
 [tool.codespell]
-skip = """
-./.tox,\
-./.egg,\
-./.git,\
-./__pycache__,\
-./build,\
-./dist.\
-"""
-
-[tool.check-manifest]
-ignore = [
-    'boilerplate.md',
-    'install.sh',
-    'uninstall.sh',
-    'Makefile',
-    'tox.ini',
-    'tests/*',
-    'examples/*',
-    '.coveragerc',
-    '.editorconfig',
-    '.pre-commit-config.yaml',
-]
-
-[tool.pimoroni]
-apt_packages = []
-configtxt = [
-    "dtoverlay=i2c1",
-    "dtoverlay=i2c1-pi5",
-    "dtoverlay=spi0-0cs"
-]
-commands = [
-    "sudo raspi-config nonint do_i2c 0",
-    "sudo raspi-config nonint do_spi 0"
-]
+skip = "./.git,./__pycache__,./build,./dist,./.venv"

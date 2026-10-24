@@ -3,7 +3,7 @@
 #
 # Run as your normal user (not root); the script calls sudo only for the
 # systemd unit. Assumes ./install.sh in the repo has already set up the
-# "pimoroni" virtualenv with the inky package.
+# project virtualenv with the inky package.
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
