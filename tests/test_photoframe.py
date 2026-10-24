@@ -67,12 +67,43 @@ def test_format_place():
     assert pf.format_place({}) is None
 
 
+def test_geocode_city_selects_admin1(monkeypatch):
+    results = [
+        {"name": "McLean", "admin1": "Texas", "country_code": "US", "latitude": 35.23255, "longitude": -100.59986},
+        {"name": "McLean", "admin1": "Virginia", "country_code": "US", "latitude": 38.93428, "longitude": -77.17748},
+    ]
+    monkeypatch.setattr(pf, "http_json", lambda *args, **kwargs: {"results": results})
+    location = pf.geocode_city("McLean", "US", "Virginia")
+    assert location["latitude"] == pytest.approx(38.93428)
+    assert location["longitude"] == pytest.approx(-77.17748)
+    assert location["admin1"] == "Virginia"
+
+
+def test_resolve_weather_location_uses_admin1(tmp_path, monkeypatch):
+    config = pf.load_config(tmp_path / "config.json")
+    results = [
+        {"name": "McLean", "admin1": "Texas", "country_code": "US", "latitude": 35.23255, "longitude": -100.59986},
+        {"name": "McLean", "admin1": "Virginia", "country_code": "US", "latitude": 38.93428, "longitude": -77.17748},
+    ]
+    monkeypatch.setattr(pf, "http_json", lambda *args, **kwargs: {"results": results})
+    location = pf.resolve_weather_location(config)
+    assert location["latitude"] == pytest.approx(38.93428)
+    assert location["admin1"] == "Virginia"
+
+
 def test_weather_code_info():
     assert pf.weather_code_info(0) == ("Clear", "clear")
     assert pf.weather_code_info(95) == ("Thunderstorm", "thunder")
     assert pf.weather_code_info(61) == ("Rain", "rain")
     assert pf.weather_code_info("not a code") == ("Unknown", "unknown")
     assert pf.weather_code_info(1234) == ("Unknown", "unknown")
+
+
+def test_weather_glyph():
+    assert pf.weather_glyph("clear", True) == "☀"
+    assert pf.weather_glyph("clear", False) == "☾"
+    assert pf.weather_glyph("rain") == "☔"
+    assert pf.weather_glyph("unknown") == "☁"
 
 
 def test_parse_weather():
@@ -131,6 +162,9 @@ def test_load_config_defaults(tmp_path):
     assert config["_state_dir"] == tmp_path / ".state"
     assert config["_sidecar"] == tmp_path / "image" / "metadata.json"
     assert config["metadata"]["reverse_geocode"] is True
+    assert config["weather"]["location"] == "McLean"
+    assert config["weather"]["country_code"] == "US"
+    assert config["weather"]["admin1"] == "Virginia"
 
 
 def test_load_config_overrides_and_validation(tmp_path):

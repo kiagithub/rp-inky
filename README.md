@@ -8,7 +8,7 @@ photo is chosen randomly each cycle (avoiding an immediate repeat when more than
 one photo is available). A footer
 overlaid on the bottom of each photo shows:
 
-- the current weather (Open-Meteo, no API key);
+- the current weather (Open-Meteo, no API key), with a weather symbol;
 - where the photo was taken (EXIF GPS, reverse-geocoded to a place name);
 - when it was taken (EXIF capture date).
 
@@ -32,7 +32,7 @@ rp-inky/
 ├── inky/             driver package (vendored, MIT)
 ├── photoframe/       the photo frame application
 │   ├── image/        your 480x800 photos
-│   ├── config.example.json
+│   ├── config.json   settings; defaults to McLean, Virginia, US
 │   └── README.md     full configuration and operation guide
 ├── tests/            tests
 ├── install.sh        Raspberry Pi setup script
@@ -56,8 +56,8 @@ pip install pillow pytest ruff==0.15.20
 # Optional: convert your own photos into photoframe/image/
 python photoframe/prepare_images.py ~/Pictures/Holiday
 
-# Optional: create a config and set weather.location for live weather/place
-cp photoframe/config.example.json photoframe/config.json
+# Optional: change the weather city (the default is McLean, Virginia, US)
+nano photoframe/config.json
 
 # Render an offline preview (placeholder if image/ is empty)
 python photoframe/photoframe.py --preview /tmp/frame.png --offline
@@ -124,8 +124,8 @@ source ~/.virtualenvs/pimoroni/bin/activate
 # Add photos (optional; see "Add many photos at once" below):
 python photoframe/prepare_images.py ~/Pictures
 
-cp photoframe/config.example.json photoframe/config.json
-nano photoframe/config.json     # set weather.location and country_code
+# Optional: change the default weather city (McLean, Virginia, US)
+nano photoframe/config.json
 ```
 
 `install.sh` creates `~/.virtualenvs/pimoroni`, installs the driver, enables
@@ -238,13 +238,47 @@ refresh after boot can take around 30 seconds.
 
 See [photoframe/README.md](photoframe/README.md) for all settings, EXIF/sidecar
 metadata, preview mode, logs, troubleshooting and orientation options. The
-config template is [photoframe/config.example.json](photoframe/config.example.json).
+default configuration is [photoframe/config.json](photoframe/config.json)
+(McLean, Virginia, US).
+
+### Change the weather city
+
+Edit `photoframe/config.json`:
+
+```json
+"weather": {
+  "location": "Your City",
+  "country_code": "US",
+  "admin1": "Your State",
+  "units": "metric"
+}
+```
+
+`admin1` is optional, but it disambiguates cities with the same name (for
+example, McLean exists in several US states). Set `units` to `imperial` for °F.
+
+You can also let the service installer update the config:
+
+```bash
+./photoframe/install-service.sh --city "Cambridge" --country GB --state England
+```
+
+Passing `--city` without `--country`/`--state` clears those fields and searches
+worldwide. After editing the config manually, restart the service:
+
+```bash
+sudo systemctl restart inky-photoframe
+```
+
+`config.json` is tracked in git. If you edit it and later run `git pull`, keep
+your weather settings if Git reports a conflict.
 
 Quick reference:
 
 - photos: `photoframe/image/` (480 × 800, or convert with `prepare_images.py`);
   chosen randomly each cycle, with new files picked up automatically;
-- weather city: `weather.location` in `photoframe/config.json`;
+- weather city: `weather.location`, `weather.country_code` and optional
+  `weather.admin1` in `photoframe/config.json` (default: McLean, Virginia, US);
 - rotation interval: `refresh_minutes` (default 20);
 - orientation: `display.rotate` (`90` default, `270` if upside down);
 - footer: `footer.height` (default 120 px, `0` hides it) and `footer.outline`

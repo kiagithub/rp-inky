@@ -12,7 +12,6 @@ dist/
 .DS_Store
 .idea/
 
-photoframe/config.json
 photoframe/.state/
 photoframe/source/
 photoframe/image/*

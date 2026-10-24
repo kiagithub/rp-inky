@@ -6,7 +6,7 @@ every 20 minutes, with a footer showing the current weather and the photo's
 EXIF capture date and place.
 
 - Panel: 800 × 480 native, 6-colour Spectra, mounted vertically.
-- Weather: Open-Meteo — free, no API key.
+- Weather: Open-Meteo — free, no API key, with a monochrome weather symbol.
 - Photo places: GPS EXIF reverse-geocoded with Nominatim/OpenStreetMap (cached, optional).
 - Random selection: avoids repeating the current photo when more than one is
   available; new files are picked up automatically.
@@ -58,26 +58,34 @@ TIFF is supported through Pillow; RAW formats are not supported.
 
 ## 2. Configure
 
+The checked-in `photoframe/config.json` defaults to **McLean, Virginia, US**.
+Edit it to change the weather city:
+
 ```bash
-cp photoframe/config.example.json photoframe/config.json
 nano photoframe/config.json
 ```
 
-At minimum, set your weather city:
-
 ```json
 "weather": {
-  "location": "Cambridge",
-  "country_code": "GB",
+  "location": "McLean",
+  "country_code": "US",
+  "admin1": "Virginia",
   "units": "metric"
 }
 ```
 
-- `country_code` disambiguates cities with the same name (e.g. Cambridge GB vs
-  Cambridge US) and is optional.
+- `country_code` is the ISO country code; `admin1` is an optional state/region
+  used to disambiguate cities with the same name.
 - `units` is `metric` (°C) or `imperial` (°F).
 - Instead of a city you can supply `latitude` and `longitude` to skip
   geocoding.
+- You can also update the config through the installer:
+  `./photoframe/install-service.sh --city "Cambridge" --country GB --state England`.
+  Passing `--city` without country/state clears those fields and searches
+  worldwide.
+
+`config.json` is tracked in git; if you edit it, keep your weather settings when
+resolving a later `git pull`.
 
 Other useful settings:
 
@@ -92,6 +100,8 @@ Other useful settings:
 | `metadata.coordinates_fallback` | `true` | Show coordinates if no place name is available. |
 | `metadata.show_unknown` | `false` | Show "Location unknown" / "Date unknown". |
 | `metadata.sidecar` | `image/metadata.json` | Optional per-photo overrides. |
+| `weather.admin1` | `Virginia` | State/region for ambiguous city names. |
+| `fonts.symbol` | `""` | Optional weather-symbol font; auto-detects DejaVu/Apple Symbols. |
 
 Paths in the config are resolved relative to `config.json`.
 
@@ -180,10 +190,10 @@ not accumulate drift.
 
 ## Photo metadata
 
-The footer is white text overlaid directly on the bottom 120 px of the photo.
-A thin black outline keeps it readable on bright images; set `footer.outline`
-to `false` for plain white text. Adjust `footer.height`, or set it to `0` to
-hide the footer entirely.
+The footer is a weather symbol plus white text overlaid directly on the bottom
+120 px of the photo. A thin black outline keeps it readable on bright images;
+set `footer.outline` to `false` for plain white text. Adjust `footer.height`,
+or set it to `0` to hide the footer entirely.
 
 The footer shows:
 
@@ -267,8 +277,7 @@ Install `pillow-heif` in the virtualenv, or export the photos as JPEG.
 photoframe/
 ├── photoframe.py            main app (render, weather, metadata, scheduler)
 ├── prepare_images.py        convert sources to 480x800 JPEGs
-├── config.example.json      documented defaults
-├── config.json              your configuration (git-ignored)
+├── config.json              default config (McLean, VA) and your edits
 ├── image/                   your photos (+ optional metadata.json)
 ├── .state/                  caches and last-photo state (git-ignored)
 ├── inky-photoframe.service.in

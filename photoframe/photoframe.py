@@ -69,7 +69,7 @@ DEFAULT_CONFIG = {
     "refresh_minutes": 20,
     "display": {"rotate": 90, "saturation": 0.5},
     "footer": {"height": 120, "outline": True},
-    "fonts": {"bold": "", "regular": ""},
+    "fonts": {"bold": "", "regular": "", "symbol": ""},
     "metadata": {
         "reverse_geocode": True,
         "coordinates_fallback": True,
@@ -77,8 +77,9 @@ DEFAULT_CONFIG = {
         "sidecar": "image/metadata.json",
     },
     "weather": {
-        "location": "",
-        "country_code": "",
+        "location": "McLean",
+        "country_code": "US",
+        "admin1": "Virginia",
         "units": "metric",
         "retries": 3,
         "retry_delay_seconds": 10,
@@ -98,6 +99,12 @@ REGULAR_FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/Library/Fonts/Arial.ttf",
+]
+SYMBOL_FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
+    "/System/Library/Fonts/Apple Symbols.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
 ]
 
 USER_AGENT = "rp-inky-photoframe/1.0 (+https://github.com/kiagithub/rp-inky)"
@@ -135,6 +142,20 @@ WMO_CONDITIONS = {
     95: ("Thunderstorm", "thunder"),
     96: ("Thunderstorm", "thunder"),
     99: ("Thunderstorm", "thunder"),
+}
+
+# Monochrome weather glyphs available in both DejaVu Sans and Apple Symbols.
+# Escapes avoid ambiguous-Unicode lint warnings.
+WEATHER_SYMBOLS = {
+    "clear": ("☀", "☾"),
+    "partly": ("☁", "☁"),
+    "cloudy": ("☁", "☁"),
+    "fog": ("≋", "≋"),
+    "drizzle": ("☂", "☂"),
+    "rain": ("☔", "☔"),
+    "snow": ("☃", "☃"),
+    "thunder": ("☈", "☈"),
+    "unknown": ("☁", "☁"),
 }
 
 
@@ -180,6 +201,7 @@ class Fonts:
     temp: Any
     condition: Any
     highlow: Any
+    weather_symbol: Any
     placeholder_title: Any
     placeholder_body: Any
     placeholder_path: Any
@@ -273,6 +295,7 @@ def load_fonts(config):
     """Load all fonts, preferring configured paths and then DejaVu."""
     bold_path = _first_existing([config["fonts"].get("bold"), *BOLD_FONT_CANDIDATES])
     regular_path = _first_existing([config["fonts"].get("regular"), *REGULAR_FONT_CANDIDATES])
+    symbol_path = _first_existing([config["fonts"].get("symbol"), *SYMBOL_FONT_CANDIDATES, regular_path])
     if bold_path is None or regular_path is None:
         LOG.warning("No TrueType font found; falling back to a very small built-in font")
     return Fonts(
@@ -282,6 +305,7 @@ def load_fonts(config):
         temp=_load_font(bold_path, 32),
         condition=_load_font(regular_path, 16),
         highlow=_load_font(regular_path, 16),
+        weather_symbol=_load_font(symbol_path, 30),
         placeholder_title=_load_font(bold_path, 30),
         placeholder_body=_load_font(regular_path, 17),
         placeholder_path=_load_font(regular_path, 15),
@@ -543,6 +567,7 @@ def validate_config(config):
     weather["retry_delay_seconds"] = 10.0 if delay is None else max(0.0, delay)
     weather["location"] = str(weather.get("location") or "").strip()
     weather["country_code"] = str(weather.get("country_code") or "").strip().upper()
+    weather["admin1"] = str(weather.get("admin1") or "").strip()
     return config
 
 
@@ -578,7 +603,7 @@ def http_json(url, params=None, timeout=HTTP_TIMEOUT):
     return data
 
 
-def geocode_city(city, country_code="", timeout=HTTP_TIMEOUT):
+def geocode_city(city, country_code="", admin1="", timeout=HTTP_TIMEOUT):
     """Look up a city with Open-Meteo's geocoder."""
     params = {"name": city, "count": 5, "language": "en", "format": "json"}
     data = http_json(GEOCODE_URL, params, timeout=timeout)
@@ -586,11 +611,19 @@ def geocode_city(city, country_code="", timeout=HTTP_TIMEOUT):
     if not results:
         return None
 
-    wanted = (country_code or "").strip().upper()
+    wanted_country = (country_code or "").strip().upper()
+    wanted_admin = (admin1 or "").strip().lower()
     selected = None
-    if wanted:
+    for item in results:
+        if wanted_country and str(item.get("country_code") or "").upper() != wanted_country:
+            continue
+        if wanted_admin and str(item.get("admin1") or "").strip().lower() != wanted_admin:
+            continue
+        selected = item
+        break
+    if selected is None and wanted_country:
         for item in results:
-            if str(item.get("country_code") or "").upper() == wanted:
+            if str(item.get("country_code") or "").upper() == wanted_country:
                 selected = item
                 break
     if selected is None:
@@ -601,7 +634,8 @@ def geocode_city(city, country_code="", timeout=HTTP_TIMEOUT):
             "latitude": float(selected["latitude"]),
             "longitude": float(selected["longitude"]),
             "name": selected.get("name") or city,
-            "country_code": selected.get("country_code") or wanted,
+            "country_code": selected.get("country_code") or wanted_country,
+            "admin1": selected.get("admin1") or str(admin1 or ""),
             "timezone": selected.get("timezone") or "",
         }
     except (KeyError, TypeError, ValueError):
@@ -620,6 +654,7 @@ def resolve_weather_location(config, offline=False):
                 "longitude": float(longitude),
                 "name": weather.get("location") or "Configured location",
                 "country_code": weather.get("country_code") or "",
+                "admin1": weather.get("admin1") or "",
                 "timezone": weather.get("timezone") or "",
             }
         except (TypeError, ValueError):
@@ -632,7 +667,8 @@ def resolve_weather_location(config, offline=False):
         return None
 
     cache_path = config["_state_dir"] / "location.json"
-    cache_key = f"{city.lower()}|{str(weather.get('country_code') or '').upper()}"
+    admin1 = weather.get("admin1") or ""
+    cache_key = f"{city.lower()}|{str(weather.get('country_code') or '').upper()}|{admin1.lower()}"
     cache = read_json(cache_path, {})
     if isinstance(cache, dict):
         cached = cache.get(cache_key)
@@ -644,7 +680,7 @@ def resolve_weather_location(config, offline=False):
         return None
 
     try:
-        location = geocode_city(city, weather.get("country_code") or "")
+        location = geocode_city(city, weather.get("country_code") or "", admin1)
     except Exception as exc:
         LOG.warning("Could not geocode %s: %s", city, exc)
         return None
@@ -670,6 +706,12 @@ def weather_code_info(code):
     except (TypeError, ValueError):
         return "Unknown", "unknown"
     return WMO_CONDITIONS.get(code, ("Unknown", "unknown"))
+
+
+def weather_glyph(icon, is_day=True):
+    """Return the monochrome weather symbol for an icon key."""
+    day_symbol, night_symbol = WEATHER_SYMBOLS.get(icon, WEATHER_SYMBOLS["unknown"])
+    return day_symbol if is_day else night_symbol
 
 
 def _first_value(values):
@@ -785,7 +827,7 @@ class PlaceResolver:
 
     def resolve(self, lat, lon):
         """Return a cached/network place name for coordinates, or None."""
-        key = f"{lat:.3f},{lon:.3f}"
+        key = f"{lat:.3f},{lon:.3f},z12"
         cache = read_json(self.path, {})
         if not isinstance(cache, dict):
             cache = {}
@@ -820,7 +862,7 @@ class PlaceResolver:
             "format": "jsonv2",
             "lat": f"{lat:.6f}",
             "lon": f"{lon:.6f}",
-            "zoom": 10,
+            "zoom": 12,
             "addressdetails": 1,
             "accept-language": "en",
         }
@@ -978,7 +1020,15 @@ def draw_footer(image, meta, weather, config, fonts):
 
     text_x = 266
     if weather is None:
-        paste_text(image, (text_x, top + 44), "No weather", fonts.condition, WHITE, outline=outline)
+        paste_text(
+            image,
+            (text_x, top + 50),
+            weather_glyph("unknown"),
+            fonts.weather_symbol,
+            WHITE,
+            outline=outline,
+        )
+        paste_text(image, (text_x + 40, top + 58), "No weather", fonts.condition, WHITE, outline=outline)
         return
 
     unit = "°F" if config["weather"].get("units") == "imperial" else "°C"
@@ -986,15 +1036,23 @@ def draw_footer(image, meta, weather, config, fonts):
     paste_text(image, (text_x, top + 14), temperature, fonts.temp, WHITE, outline=outline)
     paste_text(
         image,
-        (text_x, top + 56),
-        truncate_text(weather.condition, fonts.condition, 190),
+        (text_x, top + 50),
+        weather_glyph(weather.icon, weather.is_day),
+        fonts.weather_symbol,
+        WHITE,
+        outline=outline,
+    )
+    paste_text(
+        image,
+        (text_x + 40, top + 58),
+        truncate_text(weather.condition, fonts.condition, 150),
         fonts.condition,
         WHITE,
         outline=outline,
     )
     if weather.high is not None and weather.low is not None:
         high_low = f"H {round(weather.high)}°  L {round(weather.low)}°"
-        paste_text(image, (text_x, top + 80), high_low, fonts.highlow, WHITE, outline=outline)
+        paste_text(image, (text_x + 40, top + 84), high_low, fonts.highlow, WHITE, outline=outline)
 
 
 def render_frame(photo_path, meta, weather, config, fonts):

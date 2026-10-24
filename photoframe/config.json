@@ -12,7 +12,8 @@
   },
   "fonts": {
     "bold": "",
-    "regular": ""
+    "regular": "",
+    "symbol": ""
   },
   "metadata": {
     "reverse_geocode": true,
@@ -21,8 +22,9 @@
     "sidecar": "image/metadata.json"
   },
   "weather": {
-    "location": "",
-    "country_code": "",
+    "location": "McLean",
+    "country_code": "US",
+    "admin1": "Virginia",
     "units": "metric",
     "retries": 3,
     "retry_delay_seconds": 10

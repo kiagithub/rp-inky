@@ -25,8 +25,9 @@ RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
 
 CITY=""
 COUNTRY=""
-UNITS="metric"
-INTERVAL="20"
+STATE=""
+UNITS=""
+INTERVAL=""
 VENV="${VENV:-$RUN_HOME/.virtualenvs/pimoroni}"
 NO_START=false
 
@@ -34,10 +35,11 @@ usage() {
     cat <<EOF
 Usage: $0 [options]
 
-  --city NAME       Weather city (written to config.json on first run)
-  --country CODE    Optional ISO country code, e.g. GB
-  --units UNIT      metric (default) or imperial
-  --interval MIN    Photo rotation interval in minutes (default: 20)
+  --city NAME       Weather city (default: keep the current config.json)
+  --country CODE    ISO country code, e.g. US (cleared if --city is used alone)
+  --state NAME      State/region for ambiguous cities, e.g. Virginia
+  --units UNIT      metric or imperial (leave unchanged if omitted)
+  --interval MIN    Photo rotation interval in minutes (leave unchanged if omitted)
   --venv PATH       Python virtualenv (default: ~/.virtualenvs/pimoroni)
   --no-start        Install and enable, but do not start the service
   -h, --help        Show this help
@@ -48,6 +50,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --city) CITY="${2:-}"; shift 2 ;;
         --country) COUNTRY="${2:-}"; shift 2 ;;
+        --state) STATE="${2:-}"; shift 2 ;;
         --units) UNITS="${2:-}"; shift 2 ;;
         --interval) INTERVAL="${2:-}"; shift 2 ;;
         --venv) VENV="${2:-}"; shift 2 ;;
@@ -57,14 +60,18 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-case "$UNITS" in
-    metric|imperial) ;;
-    *) echo "--units must be metric or imperial" >&2; exit 1 ;;
-esac
+if [ -n "$UNITS" ]; then
+    case "$UNITS" in
+        metric|imperial) ;;
+        *) echo "--units must be metric or imperial" >&2; exit 1 ;;
+    esac
+fi
 
-if ! [[ "$INTERVAL" =~ ^[0-9]+([.][0-9]+)?$ ]] || [ "$(awk "BEGIN {print ($INTERVAL > 0)}")" != "1" ]; then
-    echo "--interval must be a positive number of minutes" >&2
-    exit 1
+if [ -n "$INTERVAL" ]; then
+    if ! [[ "$INTERVAL" =~ ^[0-9]+([.][0-9]+)?$ ]] || [ "$(awk "BEGIN {print ($INTERVAL > 0)}")" != "1" ]; then
+        echo "--interval must be a positive number of minutes" >&2
+        exit 1
+    fi
 fi
 
 PYTHON="$VENV/bin/python"
@@ -80,30 +87,48 @@ if ! "$PYTHON" -c "import inky, PIL" >/dev/null 2>&1; then
 fi
 
 if [ ! -f "$CONFIG" ]; then
-    cp "$APP_DIR/config.example.json" "$CONFIG"
-    if [ -n "$CITY" ]; then
-        "$PYTHON" - "$CONFIG" "$CITY" "$COUNTRY" "$UNITS" "$INTERVAL" <<'PY'
+    echo "Missing $CONFIG." >&2
+    echo "Restore it from git: git -C \"$(dirname "$APP_DIR")\" checkout -- photoframe/config.json" >&2
+    exit 1
+fi
+
+if [ -n "$CITY$COUNTRY$STATE$UNITS$INTERVAL" ]; then
+    "$PYTHON" - "$CONFIG" "$CITY" "$COUNTRY" "$STATE" "$UNITS" "$INTERVAL" <<'PY'
 import json
+import os
 import sys
 
-path, city, country, units, interval = sys.argv[1:6]
+path, city, country, state, units, interval = sys.argv[1:7]
 with open(path, encoding="utf-8") as handle:
     config = json.load(handle)
-config.setdefault("weather", {})["location"] = city
-config["weather"]["country_code"] = country.upper()
-config["weather"]["units"] = units
-value = float(interval)
-config["refresh_minutes"] = int(value) if value.is_integer() else value
-with open(path, "w", encoding="utf-8") as handle:
+weather = config.setdefault("weather", {})
+if city:
+    weather["location"] = city
+    weather["country_code"] = country.upper()
+    weather["admin1"] = state
+else:
+    if country:
+        weather["country_code"] = country.upper()
+    if state:
+        weather["admin1"] = state
+if units:
+    weather["units"] = units
+if interval:
+    value = float(interval)
+    config["refresh_minutes"] = int(value) if value.is_integer() else value
+temporary = path + ".tmp"
+with open(temporary, "w", encoding="utf-8") as handle:
     json.dump(config, handle, indent=2)
     handle.write("\n")
+os.replace(temporary, path)
 PY
-        echo "Created $CONFIG with weather location '$CITY'."
+    if [ -n "$CITY" ]; then
+        echo "Updated $CONFIG with weather location '$CITY'."
     else
-        echo "Created $CONFIG. Set weather.location (and optionally country_code) before starting."
+        echo "Updated $CONFIG."
     fi
 else
-    echo "Using existing $CONFIG (left unchanged)."
+    echo "Using existing $CONFIG. Edit weather.location to change the city."
 fi
 
 CITY_CONFIGURED="$("$PYTHON" - "$CONFIG" <<'PY'

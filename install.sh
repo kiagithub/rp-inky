@@ -59,9 +59,11 @@ Installed.
 Next steps:
   1. source $VENV/bin/activate
   2. python $REPO_DIR/photoframe/prepare_images.py ~/Pictures
-  3. cp $REPO_DIR/photoframe/config.example.json $REPO_DIR/photoframe/config.json
-     then edit weather.location and weather.country_code
-  4. $REPO_DIR/photoframe/install-service.sh --city "Cambridge" --country GB
+  3. The default weather city is McLean, Virginia, US.
+     Edit $REPO_DIR/photoframe/config.json to change weather.location,
+     or pass --city/--country/--state to install-service.sh.
+  4. $REPO_DIR/photoframe/install-service.sh
+     e.g. $REPO_DIR/photoframe/install-service.sh --city "Your City" --country US --state "Your State"
   5. sudo reboot
 
 Preview without the panel:
