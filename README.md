@@ -164,7 +164,8 @@ Quick reference:
 - weather city: `weather.location` in `photoframe/config.json`;
 - rotation interval: `refresh_minutes` (default 20);
 - orientation: `display.rotate` (`90` default, `270` if upside down);
-- footer: `footer.height` (default 120 px, `0` hides it);
+- footer: `footer.height` (default 120 px, `0` hides it) and `footer.outline`
+  (default true — thin black outline around the white text);
 - service: `inky-photoframe.service`.
 
 ## License

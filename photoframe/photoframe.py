@@ -13,7 +13,6 @@ import argparse
 import copy
 import json
 import logging
-import math
 import os
 import re
 import signal
@@ -28,7 +27,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 LOG = logging.getLogger("photoframe")
 
@@ -38,7 +37,6 @@ NATIVE_WIDTH, NATIVE_HEIGHT = 800, 480
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
-BLUE = (0, 0, 255)
 
 LANCZOS = getattr(Image, "Resampling", Image).LANCZOS
 ROTATE_90 = getattr(Image, "Transpose", Image).ROTATE_90
@@ -69,7 +67,7 @@ DEFAULT_CONFIG = {
     "state_dir": ".state",
     "refresh_minutes": 20,
     "display": {"rotate": 90, "saturation": 0.5},
-    "footer": {"height": 120},
+    "footer": {"height": 120, "outline": True},
     "fonts": {"bold": "", "regular": ""},
     "metadata": {
         "reverse_geocode": True,
@@ -220,13 +218,18 @@ def text_mask(text, font):
     return mask.point(lambda pixel: 255 if pixel >= 128 else 0)
 
 
-def paste_text(canvas, xy, text, font, fill):
-    """Paste crisp text onto the canvas in a solid palette colour."""
+def paste_text(canvas, xy, text, font, fill, outline=None):
+    """Paste crisp text, optionally with a thin outline for contrast."""
     if not text:
         return
     mask = text_mask(text, font)
-    if mask is not None:
-        canvas.paste(fill, xy, mask)
+    if mask is None:
+        return
+    if outline is not None:
+        # Dilate the glyph mask by one pixel and paste it behind the text.
+        outline_mask = mask.filter(ImageFilter.MaxFilter(3))
+        canvas.paste(outline, (xy[0] - 1, xy[1] - 1), outline_mask)
+    canvas.paste(fill, xy, mask)
 
 
 def paste_centered(canvas, y, text, font, fill, max_width=WIDTH - 80):
@@ -518,6 +521,7 @@ def validate_config(config):
         LOG.warning("footer.height must be 0 or at least 100; using 120")
         footer_height = 120
     footer["height"] = max(0, min(footer_height, 400))
+    footer["outline"] = bool(footer.get("outline", True))
 
     _ensure_dict(config, "fonts")
 
@@ -929,104 +933,6 @@ def rotate_for_display(image, degrees):
     raise ValueError("display.rotate must be 90 or 270")
 
 
-def _draw_sun(draw, x, y, size):
-    centre_x = x + size // 2
-    centre_y = y + size // 2
-    radius = max(3, int(size * 0.20))
-    draw.ellipse((centre_x - radius, centre_y - radius, centre_x + radius, centre_y + radius), fill=YELLOW)
-    inner = int(size * 0.32)
-    outer = int(size * 0.46)
-    width = max(2, size // 18)
-    for angle in range(0, 360, 45):
-        radians = math.radians(angle)
-        start = (int(centre_x + math.cos(radians) * inner), int(centre_y + math.sin(radians) * inner))
-        end = (int(centre_x + math.cos(radians) * outer), int(centre_y + math.sin(radians) * outer))
-        draw.line((start, end), fill=YELLOW, width=width)
-
-
-def _draw_moon(draw, x, y, size):
-    radius = max(3, int(size * 0.20))
-    centre_x = x + int(size * 0.42)
-    centre_y = y + int(size * 0.38)
-    draw.ellipse((centre_x - radius, centre_y - radius, centre_x + radius, centre_y + radius), fill=WHITE)
-    offset = int(size * 0.09)
-    draw.ellipse(
-        (centre_x - radius + offset, centre_y - radius - offset, centre_x + radius + offset, centre_y + radius - offset),
-        fill=BLACK,
-    )
-    for fraction_x, fraction_y in ((0.72, 0.18), (0.84, 0.34), (0.62, 0.44)):
-        star_x = x + int(size * fraction_x)
-        star_y = y + int(size * fraction_y)
-        draw.ellipse((star_x - 1, star_y - 1, star_x + 1, star_y + 1), fill=WHITE)
-
-
-def _draw_cloud(draw, x, y, size):
-    base_y = y + int(size * 0.52)
-    draw.ellipse((x + int(size * 0.08), base_y, x + int(size * 0.48), base_y + int(size * 0.38)), fill=WHITE)
-    draw.ellipse((x + int(size * 0.28), y + int(size * 0.28), x + int(size * 0.72), y + int(size * 0.78)), fill=WHITE)
-    draw.ellipse((x + int(size * 0.52), base_y, x + int(size * 0.95), base_y + int(size * 0.38)), fill=WHITE)
-    draw.rectangle(
-        (x + int(size * 0.20), base_y + int(size * 0.10), x + int(size * 0.83), base_y + int(size * 0.38)),
-        fill=WHITE,
-    )
-
-
-def draw_weather_icon(canvas, x, y, size, icon, is_day=True):
-    """Draw a simple weather icon using only the panel's palette colours."""
-    draw = ImageDraw.Draw(canvas)
-    if icon == "clear":
-        if is_day:
-            _draw_sun(draw, x, y, size)
-        else:
-            _draw_moon(draw, x, y, size)
-        return
-    if icon == "partly":
-        half = int(size * 0.72)
-        if is_day:
-            _draw_sun(draw, x, y, half)
-        else:
-            _draw_moon(draw, x, y, half)
-        _draw_cloud(draw, x + int(size * 0.26), y + int(size * 0.34), half)
-        return
-    if icon == "cloudy":
-        _draw_cloud(draw, x, y, size)
-        return
-    if icon == "fog":
-        for index, fraction in enumerate((0.54, 0.72, 0.90)):
-            line_width = int(size * (0.78 if index != 1 else 0.58))
-            line_x = x + int(size * (0.10 if index != 1 else 0.22))
-            line_y = y + int(size * fraction)
-            draw.line((line_x, line_y, line_x + line_width, line_y), fill=WHITE, width=max(2, size // 16))
-        return
-    if icon in ("drizzle", "rain", "snow", "thunder"):
-        _draw_cloud(draw, x, y - int(size * 0.06), int(size * 0.86))
-        if icon in ("drizzle", "rain"):
-            drop_top = y + int(size * 0.72)
-            drop_bottom = y + int(size * 0.90)
-            for fraction in (0.30, 0.50, 0.70):
-                drop_x = x + int(size * fraction)
-                draw.line((drop_x, drop_top, drop_x - int(size * 0.04), drop_bottom), fill=BLUE, width=max(2, size // 16))
-        elif icon == "snow":
-            for fraction_x, fraction_y in ((0.30, 0.78), (0.50, 0.88), (0.70, 0.78)):
-                dot_x = x + int(size * fraction_x)
-                dot_y = y + int(size * fraction_y)
-                dot_radius = max(2, size // 18)
-                draw.ellipse((dot_x - dot_radius, dot_y - dot_radius, dot_x + dot_radius, dot_y + dot_radius), fill=WHITE)
-        else:
-            bolt = [
-                (x + int(size * 0.53), y + int(size * 0.56)),
-                (x + int(size * 0.40), y + int(size * 0.78)),
-                (x + int(size * 0.51), y + int(size * 0.78)),
-                (x + int(size * 0.43), y + int(size * 1.00)),
-                (x + int(size * 0.68), y + int(size * 0.70)),
-                (x + int(size * 0.55), y + int(size * 0.70)),
-                (x + int(size * 0.66), y + int(size * 0.56)),
-            ]
-            draw.polygon(bolt, fill=YELLOW)
-        return
-    _draw_cloud(draw, x, y, size)
-
-
 def draw_placeholder(image_dir, fonts):
     """Build a friendly screen shown when image/ has no usable photos."""
     image = Image.new("RGB", (WIDTH, HEIGHT), WHITE)
@@ -1041,13 +947,12 @@ def draw_placeholder(image_dir, fonts):
 
 
 def draw_footer(image, meta, weather, config, fonts):
-    """Overlay the metadata/weather footer on the bottom of a portrait frame."""
+    """Overlay the metadata/weather text on the bottom of a portrait frame."""
     height = int(config["footer"]["height"])
     if height <= 0:
         return
     top = HEIGHT - height
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((0, top, WIDTH, HEIGHT), fill=BLACK)
+    outline = BLACK if config["footer"].get("outline", True) else None
 
     if meta is not None:
         place = meta.place
@@ -1060,6 +965,7 @@ def draw_footer(image, meta, weather, config, fonts):
                 truncate_text(place, fonts.place, 225),
                 fonts.place,
                 WHITE,
+                outline=outline,
             )
 
         date_text = None
@@ -1068,42 +974,40 @@ def draw_footer(image, meta, weather, config, fonts):
         elif config["metadata"].get("show_unknown", False):
             date_text = "Date unknown"
         if date_text:
-            paste_text(image, (26, top + 62), date_text, fonts.date, WHITE)
+            paste_text(image, (26, top + 62), date_text, fonts.date, WHITE, outline=outline)
 
         if meta.place_source == "nominatim":
-            paste_text(image, (26, top + height - 16), "© OpenStreetMap", fonts.attribution, WHITE)
+            paste_text(image, (26, top + height - 16), "© OpenStreetMap", fonts.attribution, WHITE, outline=outline)
 
-    icon_x, icon_y, icon_size = 266, top + 22, 56
-    text_x = 336
+    text_x = 266
     if weather is None:
-        draw_weather_icon(image, icon_x, icon_y, icon_size, "unknown", True)
-        paste_text(image, (text_x, top + 44), "No weather", fonts.condition, WHITE)
+        paste_text(image, (text_x, top + 44), "No weather", fonts.condition, WHITE, outline=outline)
         return
 
-    draw_weather_icon(image, icon_x, icon_y, icon_size, weather.icon, weather.is_day)
     unit = "°F" if config["weather"].get("units") == "imperial" else "°C"
     temperature = "--" if weather.temperature is None else f"{round(weather.temperature)}{unit}"
-    paste_text(image, (text_x, top + 14), temperature, fonts.temp, WHITE)
+    paste_text(image, (text_x, top + 14), temperature, fonts.temp, WHITE, outline=outline)
     paste_text(
         image,
         (text_x, top + 56),
-        truncate_text(weather.condition, fonts.condition, 120),
+        truncate_text(weather.condition, fonts.condition, 190),
         fonts.condition,
         WHITE,
+        outline=outline,
     )
     if weather.high is not None and weather.low is not None:
         high_low = f"H {round(weather.high)}°  L {round(weather.low)}°"
-        paste_text(image, (text_x, top + 80), high_low, fonts.highlow, WHITE)
+        paste_text(image, (text_x, top + 80), high_low, fonts.highlow, WHITE, outline=outline)
 
 
 def render_frame(photo_path, meta, weather, config, fonts):
     """Compose one 480x800 portrait frame."""
-    image = fit_photo(photo_path) if photo_path is not None else None
-    if image is None:
-        image = draw_placeholder(config["_image_dir"], fonts)
-        meta = None
-    draw_footer(image, meta, weather, config, fonts)
-    return image
+    if photo_path is not None:
+        image = fit_photo(photo_path)
+        if image is not None:
+            draw_footer(image, meta, weather, config, fonts)
+            return image
+    return draw_placeholder(config["_image_dir"], fonts)
 
 
 def init_display():

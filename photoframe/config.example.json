@@ -7,7 +7,8 @@
     "saturation": 0.5
   },
   "footer": {
-    "height": 120
+    "height": 120,
+    "outline": true
   },
   "fonts": {
     "bold": "",

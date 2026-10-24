@@ -196,7 +196,7 @@ def test_render_frame(tmp_path):
     weather = pf.Weather(temperature=13.3, condition="Partly cloudy", icon="partly", is_day=True, high=15, low=6)
     frame = pf.render_frame(photo, meta, weather, config, fonts)
     assert frame.size == (480, 800)
-    assert frame.getpixel((5, 795)) == (0, 0, 0)
+    assert frame.getpixel((5, 795)) == pytest.approx((120, 80, 40), abs=3)
 
 
 def test_render_placeholder(tmp_path):
@@ -204,7 +204,7 @@ def test_render_placeholder(tmp_path):
     fonts = pf.load_fonts(config)
     frame = pf.render_frame(None, None, None, config, fonts)
     assert frame.size == (480, 800)
-    assert frame.getpixel((5, 795)) == (0, 0, 0)
+    assert frame.getpixel((5, 795)) == (255, 255, 255)
 
 
 class FakeDisplay:
