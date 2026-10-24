@@ -35,6 +35,9 @@ usage() {
     cat <<EOF
 Usage: $0 [options]
 
+The tracked config.json defaults to McLean, Virginia, US.
+Run without --city to use it.
+
   --city NAME       Weather city (default: keep the current config.json)
   --country CODE    ISO country code, e.g. US (cleared if --city is used alone)
   --state NAME      State/region for ambiguous cities, e.g. Virginia

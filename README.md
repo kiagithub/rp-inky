@@ -143,12 +143,14 @@ After reconnecting:
 
 ```bash
 cd ~/rp-inky
-./photoframe/install-service.sh --city "Cambridge" --country GB
+./photoframe/install-service.sh    # uses the default McLean, Virginia, US config
 
 # Check it is running
 sudo systemctl status inky-photoframe
 sudo journalctl -u inky-photoframe -f
 ```
+
+To use a different city, see [Change the weather city](#change-the-weather-city).
 
 The service starts at boot, picks up new photos from `photoframe/image/`
 without a restart, and can be restarted after config changes:
@@ -257,10 +259,11 @@ Edit `photoframe/config.json`:
 `admin1` is optional, but it disambiguates cities with the same name (for
 example, McLean exists in several US states). Set `units` to `imperial` for °F.
 
-You can also let the service installer update the config:
+You can also let the service installer update the config. Run it without flags
+to keep the default (McLean, Virginia, US), or supply your own values:
 
 ```bash
-./photoframe/install-service.sh --city "Cambridge" --country GB --state England
+./photoframe/install-service.sh --city "Your City" --country US --state "Your State"
 ```
 
 Passing `--city` without `--country`/`--state` clears those fields and searches

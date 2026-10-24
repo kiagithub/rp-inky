@@ -80,9 +80,9 @@ nano photoframe/config.json
 - Instead of a city you can supply `latitude` and `longitude` to skip
   geocoding.
 - You can also update the config through the installer:
-  `./photoframe/install-service.sh --city "Cambridge" --country GB --state England`.
-  Passing `--city` without country/state clears those fields and searches
-  worldwide.
+  `./photoframe/install-service.sh --city "Your City" --country US --state "Your State"`.
+  Run it without flags to keep the default McLean, Virginia, US. Passing
+  `--city` without country/state clears those fields and searches worldwide.
 
 `config.json` is tracked in git; if you edit it, keep your weather settings when
 resolving a later `git pull`.
@@ -127,13 +127,14 @@ python photoframe/photoframe.py --once
 ## 4. Install the startup service
 
 ```bash
-./photoframe/install-service.sh --city "Cambridge" --country GB
+./photoframe/install-service.sh    # uses the default McLean, Virginia, US config
 ```
 
 The script:
 
-- creates `photoframe/config.json` from the example if it does not exist
-  (never overwrites an existing config);
+- uses the tracked `photoframe/config.json` (defaults to McLean, Virginia, US);
+- updates `weather.location`, `weather.country_code` and `weather.admin1` when
+  `--city`/`--country`/`--state` are supplied;
 - installs `/etc/systemd/system/inky-photoframe.service`;
 - adds the current user to the service and includes the `spi`/`gpio`/`i2c`
   groups that exist;
@@ -141,7 +142,8 @@ The script:
 
 It calls `sudo` itself — do not run the script with `sudo`.
 
-Options: `--units imperial`, `--interval 30`, `--venv PATH`, `--no-start`.
+Options: `--city`, `--country`, `--state`, `--units imperial`, `--interval 30`,
+`--venv PATH`, `--no-start`.
 
 If no weather city is configured, the service is installed and enabled but not
 started. Edit `config.json`, then run:
@@ -198,7 +200,7 @@ or set it to `0` to hide the footer entirely.
 The footer shows:
 
 - **Place** — from the photo's GPS EXIF, reverse-geocoded to a city name
-  (`Cambridge, GB`). Results are cached in `photoframe/.state/places.json`.
+  (`McLean, US`). Results are cached in `photoframe/.state/places.json`.
 - **Date taken** — from EXIF `DateTimeOriginal` (falling back to
   `DateTimeDigitized` / `DateTime`).
 
