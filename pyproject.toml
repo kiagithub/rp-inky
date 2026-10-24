@@ -19,7 +19,7 @@ keywords = [
 ]
 dependencies = [
     "numpy",
-    "pillow",
+    "pillow>=11",
     "smbus2",
     "spidev",
     "gpiodevice>=0.1.0",
