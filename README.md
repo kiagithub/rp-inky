@@ -284,9 +284,9 @@ Quick reference:
   `weather.admin1` in `photoframe/config.json` (default: McLean, Virginia, US);
 - rotation interval: `refresh_minutes` (default 20);
 - orientation: `display.rotate` (`90` default, `270` if upside down);
-- footer: `footer.height` (default 220 px; `0` hides it, otherwise minimum 220)
-  and `footer.outline`
-  (default true — thin black outline around the yellow text);
+- footer: `footer.height` (default 100 px; `0` hides it, otherwise minimum 80);
+- colour: `display.saturation` (0.8), `display.color` (1.1),
+  `display.contrast` (1.05) and `display.brightness` (1.0);
 - service: `inky-photoframe.service`.
 
 ## License

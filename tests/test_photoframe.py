@@ -130,7 +130,11 @@ def test_load_config_defaults(tmp_path):
     config = pf.load_config(tmp_path / "config.json")
     assert config["refresh_minutes"] == 20
     assert config["display"]["rotate"] == 90
-    assert config["display"]["saturation"] == 0.5
+    assert config["display"]["saturation"] == 0.8
+    assert config["display"]["color"] == 1.1
+    assert config["display"]["contrast"] == 1.05
+    assert config["display"]["brightness"] == 1.0
+    assert config["footer"]["height"] == 100
     assert config["_image_dir"] == tmp_path / "image"
     assert config["_state_dir"] == tmp_path / ".state"
     assert config["_sidecar"] == tmp_path / "image" / "metadata.json"
@@ -158,7 +162,7 @@ def test_load_config_overrides_and_validation(tmp_path):
     assert config["refresh_minutes"] == 5
     assert config["display"]["rotate"] == 270
     assert config["display"]["saturation"] == 1.0
-    assert config["footer"]["height"] == 220  # 40 is too small, falls back
+    assert config["footer"]["height"] == 100  # 40 is too small, falls back
     assert config["weather"]["units"] == "imperial"
     assert config["weather"]["retry_delay_seconds"] == 0.0
     assert config["_image_dir"] == tmp_path / "photos"
@@ -211,7 +215,7 @@ def test_render_frame(tmp_path):
     weather = pf.Weather(temperature=13.3)
     frame = pf.render_frame(photo, meta, weather, config, fonts)
     assert frame.size == (480, 800)
-    assert frame.getpixel((5, 795)) == pytest.approx((120, 80, 40), abs=3)
+    assert frame.getpixel((5, 795)) == (0, 0, 0)
 
 
 def test_render_placeholder(tmp_path):
@@ -245,7 +249,7 @@ def test_show_frame_rotates_to_native(tmp_path):
     display = FakeDisplay()
     pf.show_frame(display, frame, config)
     assert display.image.size == (800, 480)
-    assert display.saturation == 0.5
+    assert display.saturation == 0.8
     assert display.shown is True
 
 

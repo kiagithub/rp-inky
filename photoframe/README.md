@@ -93,9 +93,11 @@ Other useful settings:
 | --- | --- | --- |
 | `refresh_minutes` | `20` | Minutes between photo changes. |
 | `display.rotate` | `90` | `90` or `270`. Use `270` if the frame is upside down. |
-| `display.saturation` | `0.5` | 0–1 colour saturation. Lower is more muted. |
-| `footer.height` | `220` | Footer area height in pixels; `0` hides it, otherwise minimum 220. |
-| `footer.outline` | `true` | Thin black outline around the yellow footer text. |
+| `display.saturation` | `0.8` | 0–1 palette saturation. Higher is more vivid. |
+| `display.color` | `1.1` | Source colour boost (1.0 = unchanged). |
+| `display.contrast` | `1.05` | Source contrast boost (1.0 = unchanged). |
+| `display.brightness` | `1.0` | Source brightness (1.0 = unchanged). |
+| `footer.height` | `100` | Single-line banner height; `0` hides it, otherwise minimum 80. |
 | `metadata.reverse_geocode` | `true` | Look up place names from photo GPS. |
 | `metadata.coordinates_fallback` | `true` | Show coordinates if no place name is available. |
 | `metadata.show_unknown` | `false` | Show "Location unknown" / "Date unknown". |
@@ -191,13 +193,11 @@ not accumulate drift.
 
 ## Photo metadata
 
-The footer shows the place and capture date, plus a large temperature, all in
-yellow and overlaid directly on the bottom 220 px of the photo. A thin black
-outline keeps it readable on bright images; set `footer.outline` to `false` for
-plain yellow text. Adjust `footer.height`, or set it to `0` to hide the footer
-entirely.
+The footer is a single-line black banner at the bottom of the photo. The place
+and capture date are on the left (without a "Taken" prefix) and the temperature
+is on the right, all in yellow.
 
-The footer shows:
+The place and date come from:
 
 - **Place** — from the photo's GPS EXIF, reverse-geocoded to a city name
   (`McLean, US`). Results are cached in `photoframe/.state/places.json`.
@@ -207,6 +207,19 @@ The footer shows:
 Missing values are simply omitted by default. If a photo has GPS but no network
 or place match, coordinates are shown (disable with
 `metadata.coordinates_fallback: false`).
+
+### Colour and brightness
+
+The 6-colour Spectra panel has fixed inks; there is no hue or backlight/brightness
+register to adjust. The app instead:
+
+- passes `display.saturation` to the driver's `set_image()` (higher values use a
+  more saturated quantization palette);
+- optionally boosts the source image with `display.color`, `display.contrast`
+  and `display.brightness` (1.0 disables each adjustment).
+
+The driver's `FAST` refresh speed reduces colour saturation, so this app uses
+the driver's default `NORMAL` speed.
 
 ### Sidecar overrides
 

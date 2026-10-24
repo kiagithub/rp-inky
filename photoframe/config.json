@@ -4,11 +4,13 @@
   "refresh_minutes": 20,
   "display": {
     "rotate": 90,
-    "saturation": 0.5
+    "saturation": 0.8,
+    "color": 1.1,
+    "contrast": 1.05,
+    "brightness": 1.0
   },
   "footer": {
-    "height": 220,
-    "outline": true
+    "height": 100
   },
   "fonts": {
     "bold": "",

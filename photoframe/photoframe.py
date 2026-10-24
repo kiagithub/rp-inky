@@ -28,7 +28,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
 
 LOG = logging.getLogger("photoframe")
 
@@ -67,8 +67,14 @@ DEFAULT_CONFIG = {
     "image_dir": "image",
     "state_dir": ".state",
     "refresh_minutes": 20,
-    "display": {"rotate": 90, "saturation": 0.5},
-    "footer": {"height": 220, "outline": True},
+    "display": {
+        "rotate": 90,
+        "saturation": 0.8,
+        "color": 1.1,
+        "contrast": 1.05,
+        "brightness": 1.0,
+    },
+    "footer": {"height": 100},
     "fonts": {"bold": "", "regular": ""},
     "metadata": {
         "reverse_geocode": True,
@@ -180,18 +186,13 @@ def text_mask(text, font):
     return mask.point(lambda pixel: 255 if pixel >= 128 else 0)
 
 
-def paste_text(canvas, xy, text, font, fill, outline=None):
-    """Paste crisp text, optionally with a thin outline for contrast."""
+def paste_text(canvas, xy, text, font, fill):
+    """Paste crisp text onto the canvas in a solid palette colour."""
     if not text:
         return
     mask = text_mask(text, font)
-    if mask is None:
-        return
-    if outline is not None:
-        # Dilate the glyph mask by one pixel and paste it behind the text.
-        outline_mask = mask.filter(ImageFilter.MaxFilter(3))
-        canvas.paste(outline, (xy[0] - 1, xy[1] - 1), outline_mask)
-    canvas.paste(fill, xy, mask)
+    if mask is not None:
+        canvas.paste(fill, xy, mask)
 
 
 def paste_centered(canvas, y, text, font, fill, max_width=WIDTH - 80):
@@ -237,9 +238,9 @@ def load_fonts(config):
     if bold_path is None or regular_path is None:
         LOG.warning("No TrueType font found; using a tiny fallback. Install fonts-dejavu-core.")
     return Fonts(
-        place=_load_font(bold_path, 48),
-        date=_load_font(regular_path, 36),
-        temp=_load_font(bold_path, 120),
+        place=_load_font(bold_path, 20),
+        date=_load_font(regular_path, 18),
+        temp=_load_font(bold_path, 44),
         placeholder_title=_load_font(bold_path, 30),
         placeholder_body=_load_font(regular_path, 17),
         placeholder_path=_load_font(regular_path, 15),
@@ -469,18 +470,20 @@ def validate_config(config):
         rotate = 90
     display["rotate"] = rotate
     saturation = _as_float(display.get("saturation"))
-    display["saturation"] = 0.5 if saturation is None else min(1.0, max(0.0, saturation))
+    display["saturation"] = 0.8 if saturation is None else min(1.0, max(0.0, saturation))
+    for key, default in (("color", 1.1), ("contrast", 1.05), ("brightness", 1.0)):
+        value = _as_float(display.get(key))
+        display[key] = default if value is None else min(2.0, max(0.0, value))
 
     footer = _ensure_dict(config, "footer")
     try:
-        footer_height = int(footer.get("height", 220))
+        footer_height = int(footer.get("height", 100))
     except (TypeError, ValueError):
-        footer_height = 220
-    if footer_height != 0 and footer_height < 220:
-        LOG.warning("footer.height must be 0 or at least 220; using 220")
-        footer_height = 220
-    footer["height"] = max(0, min(footer_height, 400))
-    footer["outline"] = bool(footer.get("outline", True))
+        footer_height = 100
+    if footer_height != 0 and footer_height < 80:
+        LOG.warning("footer.height must be 0 or at least 80; using 100")
+        footer_height = 100
+    footer["height"] = max(0, min(footer_height, 300))
 
     _ensure_dict(config, "fonts")
 
@@ -876,13 +879,13 @@ def draw_placeholder(image_dir, fonts):
 
 
 def draw_footer(image, meta, weather, config, fonts):
-    """Overlay the place, capture date and a large temperature on the photo."""
+    """Draw a single-line black banner with location/date and temperature."""
     height = int(config["footer"]["height"])
     if height <= 0:
         return
     top = HEIGHT - height
-    outline = BLACK if config["footer"].get("outline", True) else None
-    text_color = YELLOW
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, top, WIDTH, HEIGHT), fill=BLACK)
 
     unit = "°F" if config["weather"].get("units") == "imperial" else "°C"
     temperature = (
@@ -890,42 +893,59 @@ def draw_footer(image, meta, weather, config, fonts):
         if weather is not None and weather.temperature is not None
         else "--"
     )
-
     temp_width = text_width(fonts.temp, temperature)
-    temp_x = WIDTH - 26 - temp_width
     temp_height = text_metrics(fonts.temp, temperature)[1]
-    temp_y = top + height - temp_height - 10
+    temp_x = WIDTH - 26 - temp_width
+    temp_y = top + (height - temp_height) // 2
 
     if meta is not None:
         place = meta.place
         if not place and config["metadata"].get("show_unknown", False):
             place = "Location unknown"
-        if place:
-            paste_text(
-                image,
-                (26, top + 20),
-                truncate_text(place, fonts.place, WIDTH - 52),
-                fonts.place,
-                text_color,
-                outline=outline,
-            )
 
         date_text = None
         if meta.taken is not None:
-            date_text = "Taken " + format_date(meta.taken)
+            date_text = format_date(meta.taken)
         elif config["metadata"].get("show_unknown", False):
             date_text = "Date unknown"
-        if date_text:
+
+        left_max = max(80, temp_x - 26 - 16)
+        line_height = max(text_metrics(fonts.place, "Mg")[1], text_metrics(fonts.date, "Mg")[1])
+        line_y = top + (height - line_height) // 2
+
+        if place and date_text:
+            suffix = " · " + date_text
+            place_max = max(60, left_max - text_width(fonts.date, suffix))
+            place_text = truncate_text(place, fonts.place, place_max)
+            paste_text(image, (26, line_y), place_text, fonts.place, YELLOW)
             paste_text(
                 image,
-                (26, top + 70),
-                truncate_text(date_text, fonts.date, WIDTH - 52),
+                (26 + text_width(fonts.place, place_text), line_y),
+                suffix,
                 fonts.date,
-                text_color,
-                outline=outline,
+                YELLOW,
             )
+        elif place:
+            place_text = truncate_text(place, fonts.place, left_max)
+            paste_text(image, (26, line_y), place_text, fonts.place, YELLOW)
+        elif date_text:
+            paste_text(image, (26, line_y), date_text, fonts.date, YELLOW)
 
-    paste_text(image, (temp_x, temp_y), temperature, fonts.temp, text_color, outline=outline)
+    paste_text(image, (temp_x, temp_y), temperature, fonts.temp, YELLOW)
+
+
+def enhance_photo(image, config):
+    """Apply optional colour, contrast and brightness boosts to the photo."""
+    display = config["display"]
+    for key, enhancer in (
+        ("color", ImageEnhance.Color),
+        ("contrast", ImageEnhance.Contrast),
+        ("brightness", ImageEnhance.Brightness),
+    ):
+        factor = float(display.get(key, 1.0))
+        if factor != 1.0:
+            image = enhancer(image).enhance(factor)
+    return image
 
 
 def render_frame(photo_path, meta, weather, config, fonts):
@@ -933,6 +953,7 @@ def render_frame(photo_path, meta, weather, config, fonts):
     if photo_path is not None:
         image = fit_photo(photo_path)
         if image is not None:
+            image = enhance_photo(image, config)
             draw_footer(image, meta, weather, config, fonts)
             return image
     return draw_placeholder(config["_image_dir"], fonts)
