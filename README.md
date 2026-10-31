@@ -289,6 +289,16 @@ Quick reference:
   `display.contrast` (1.05) and `display.brightness` (1.0);
 - service: `inky-photoframe.service`.
 
+## VPN WiFi hotspot
+
+The same Pi can double as a **VPN travel gateway**: alongside the photo
+frame it broadcasts its own WiFi network whose traffic is routed through
+a WireGuard tunnel to a Surfshark server (e.g. in the UK), so a TV joined
+to that WiFi appears to be there. Requires the Pi on Ethernet; the
+built-in WiFi becomes the hotspot. Hotspot clients can only reach the
+internet through the tunnel (kill switch). See
+[vpn-hotspot/README.md](vpn-hotspot/README.md).
+
 ## License
 
 MIT. The `inky/` driver is derived from the MIT-licensed Inky library; see
