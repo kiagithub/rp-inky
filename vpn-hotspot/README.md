@@ -91,6 +91,11 @@ with `hostapd`. No router changes are needed.
 - **Tunnel**: `sudo wg show` — look for `latest handshake` and growing
   transfer counters. No handshake after a minute → try another UK server
   config. `systemctl status wg-quick@wg0` shows routing errors.
+- **`wg-quick` fails with `resolvconf: command not found`**: the VPN
+  config's `DNS =` line needs `openresolv`; the installer installs it, but
+  if it was missing during a first failed run,
+  `sudo apt install -y openresolv` and
+  `sudo systemctl restart wg-quick@wg0` fix it.
 - **WiFi not visible**: `systemctl status hostapd`; a config typo is the
   usual cause (`journalctl -u hostapd -e`). Check the password is 8-63
   characters.

@@ -49,7 +49,7 @@ fi
 log "installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq wireguard hostapd dnsmasq >/dev/null
+apt-get install -y -qq wireguard hostapd dnsmasq openresolv >/dev/null
 
 IPTABLES_RESTORE="$(command -v iptables-restore || echo /usr/sbin/iptables-restore)"
 IP="$(command -v ip || echo /usr/sbin/ip)"
