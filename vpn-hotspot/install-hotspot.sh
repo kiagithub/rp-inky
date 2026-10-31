@@ -49,9 +49,10 @@ fi
 log "installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq wireguard hostapd dnsmasq openresolv >/dev/null
+apt-get install -y -qq wireguard hostapd dnsmasq openresolv iptables >/dev/null
 
 IPTABLES_RESTORE="$(command -v iptables-restore || echo /usr/sbin/iptables-restore)"
+[[ -x "$IPTABLES_RESTORE" ]] || die "iptables-restore not found; is the iptables package installed?"
 IP="$(command -v ip || echo /usr/sbin/ip)"
 
 # --------------------------- WireGuard tunnel ----------------------------

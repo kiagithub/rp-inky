@@ -96,6 +96,10 @@ with `hostapd`. No router changes are needed.
   if it was missing during a first failed run,
   `sudo apt install -y openresolv` and
   `sudo systemctl restart wg-quick@wg0` fix it.
+- **`hotspot-firewall.service` fails with exit status 203**: `iptables`
+  is not installed (Pi OS Lite does not include it by default).
+  `sudo apt install -y iptables` and
+  `sudo systemctl restart hotspot-firewall` fix it.
 - **WiFi not visible**: `systemctl status hostapd`; a config typo is the
   usual cause (`journalctl -u hostapd -e`). Check the password is 8-63
   characters.
