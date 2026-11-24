@@ -13,6 +13,13 @@ dist/
 .idea/
 
 photoframe/.state/
+photoframe/config.local.json
 photoframe/source/
 photoframe/image/*
 !photoframe/image/.gitkeep
+
+vpn/.state/
+vpn/auth.txt
+vpn/config.local.json
+vpn/profiles/*
+!vpn/profiles/.gitkeep

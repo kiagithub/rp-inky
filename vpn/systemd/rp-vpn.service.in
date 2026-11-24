@@ -1,0 +1,14 @@
+[Unit]
+Description=rp-inky Always-On Surfshark VPN Tunnel
+Wants=network-online.target rp-vpn-hotspot.service
+After=network-online.target rp-vpn-hotspot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 __VPN_DIR__/manager.py --config __VPN_DIR__/config.json service-start
+ExecStop=/usr/bin/python3 __VPN_DIR__/manager.py --config __VPN_DIR__/config.json service-stop
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

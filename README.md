@@ -1,6 +1,9 @@
 # rp-inky
 
-A Raspberry Pi e-ink digital photo frame for the **Inky Impression 7.3" (PIM773)**.
+A dual-purpose Raspberry Pi 4 project combining:
+
+1. **E-ink digital photo frame** for the **Inky Impression 7.3" (PIM773)** (`photoframe/`).
+2. **Always-On high-speed Surfshark UK VPN & 5 GHz Wi-Fi Hotspot** with multi-profile WireGuard/OpenVPN switching, leak-proof `nftables` kill-switch, automatic UK failover, and 500+ Mbps LAN gateway support (`vpn/`).
 
 The panel is mounted in portrait: photos are composed at **480 × 800**, rotated
 to the panel's native 800 × 480 size, and changed every **20 minutes**. A new
@@ -33,9 +36,14 @@ rp-inky/
 ├── photoframe/       the photo frame application
 │   ├── image/        your 480x800 photos
 │   ├── config.json   settings; defaults to McLean, Virginia, US
-│   └── README.md     full configuration and operation guide
-├── tests/            tests
-├── install.sh        Raspberry Pi setup script
+│   └── README.md     full photo frame configuration and operation guide
+├── vpn/              always-on Surfshark UK VPN, hotspot & profile switcher
+│   ├── manager.py    rp-vpn CLI, firewall, hotspot & failover watchdog
+│   ├── config.json   VPN & 5 GHz hotspot defaults
+│   ├── profiles/     imported WireGuard (.conf) & OpenVPN (.ovpn) configs (git-ignored)
+│   └── README.md     500 Mbps setup, multi-config switching & troubleshooting
+├── tests/            offline unit tests (photo frame + VPN)
+├── install.sh        Raspberry Pi photo frame setup script
 ├── pyproject.toml
 └── LICENSE
 ```
@@ -64,8 +72,8 @@ python photoframe/photoframe.py --preview /tmp/frame.png --offline
 open /tmp/frame.png
 
 # Run the app tests and linter
-python -m pytest tests/test_photoframe.py -q
-ruff check photoframe tests/test_photoframe.py
+python -m pytest tests/test_photoframe.py tests/test_vpn.py -q
+ruff check photoframe vpn tests/test_photoframe.py tests/test_vpn.py
 ```
 
 Notes:
@@ -273,15 +281,17 @@ worldwide. After editing the config manually, restart the service:
 sudo systemctl restart inky-photoframe
 ```
 
-`config.json` is tracked in git. If you edit it and later run `git pull`, keep
-your weather settings if Git reports a conflict.
+`config.json` is tracked in git. To avoid merge conflicts on `git pull`, you can
+put personal overrides in an untracked `photoframe/config.local.json` file (it is
+deep-merged over `config.json` automatically).
 
 Quick reference:
 
 - photos: `photoframe/image/` (480 × 800, or convert with `prepare_images.py`);
   chosen randomly each cycle, with new files picked up automatically;
 - weather city: `weather.location`, `weather.country_code` and optional
-  `weather.admin1` in `photoframe/config.json` (default: McLean, Virginia, US);
+  `weather.admin1` in `photoframe/config.local.json` or `photoframe/config.json`
+  (default: McLean, Virginia, US);
 - rotation interval: `refresh_minutes` (default 20);
 - orientation: `display.rotate` (`90` default, `270` if upside down);
 - footer: `footer.height` (default 100 px; `0` hides it, otherwise minimum 80);
@@ -289,15 +299,35 @@ Quick reference:
   `display.contrast` (1.05) and `display.brightness` (1.0);
 - service: `inky-photoframe.service`.
 
-## VPN WiFi hotspot
+## Always-On Surfshark UK VPN & 5 GHz Hotspot
 
-The same Pi can double as a **VPN travel gateway**: alongside the photo
-frame it broadcasts its own WiFi network whose traffic is routed through
-a WireGuard tunnel to a Surfshark server (e.g. in the UK), so a TV joined
-to that WiFi appears to be there. Requires the Pi on Ethernet; the
-built-in WiFi becomes the hotspot. Hotspot clients can only reach the
-internet through the tunnel (kill switch). See
-[vpn-hotspot/README.md](vpn-hotspot/README.md).
+Alongside the photo frame, the Pi 4 can run an **always-on, high-speed UK VPN
+router and 5 GHz 802.11ac (`VHT80`) Wi-Fi hotspot** (`vpn/`). Policy routing
+(`Table 51820`) keeps the Pi's own weather/Nominatim and SSH traffic on `eth0`,
+while strictly routing and kill-switching all Hotspot and LAN Gateway client
+traffic through Surfshark (supporting multiple WireGuard `.conf` and OpenVPN
+`.ovpn` configs with automatic UK failover and 500+ Mbps forwarding).
+
+```bash
+# On the Pi (automatically migrates any previous vpn-hotspot setup too)
+cd ~/rp-inky
+./vpn/install-vpn.sh \
+  --ssid "RP-UK-VPN" \
+  --passphrase "ChooseAStrongPassword" \
+  --country US \
+  --import ~/surfshark-configs/
+
+# Switch configs & check speed anytime
+rp-vpn list
+sudo rp-vpn use uk-lon
+sudo rp-vpn use uk-man
+sudo rp-vpn status
+sudo rp-vpn benchmark
+```
+
+See **[vpn/README.md](vpn/README.md)** for full details on multi-config
+management, automatic UK failover, and getting the full **500 Mbps** on
+Raspberry Pi 4.
 
 ## License
 

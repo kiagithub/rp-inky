@@ -48,29 +48,39 @@ fi
 
 CONFIG="/boot/firmware/config.txt"
 if [ -f "$CONFIG" ]; then
-    for overlay in dtoverlay=i2c1 dtoverlay=i2c1-pi5 dtoverlay=spi0-0cs; do
+    MODEL=""
+    if [ -r /proc/device-tree/model ]; then
+        MODEL="$(tr -d '\0' </proc/device-tree/model)"
+    fi
+    OVERLAYS=("dtoverlay=i2c1" "dtoverlay=spi0-0cs")
+    if [[ "$MODEL" == *"Raspberry Pi 5"* ]]; then
+        OVERLAYS+=("dtoverlay=i2c1-pi5")
+    fi
+    for overlay in "${OVERLAYS[@]}"; do
         if ! grep -qx "$overlay" "$CONFIG"; then
             echo "$overlay" | sudo tee -a "$CONFIG" >/dev/null
             echo "Added $overlay to $CONFIG"
         fi
     done
 else
-    echo "Warning: $CONFIG not found; add dtoverlay=i2c1, dtoverlay=i2c1-pi5 and dtoverlay=spi0-0cs manually."
+    echo "Warning: $CONFIG not found; add dtoverlay=i2c1 and dtoverlay=spi0-0cs manually (plus dtoverlay=i2c1-pi5 on Pi 5)."
 fi
 
 cat <<EOF
 
 Installed.
 
-Next steps:
+Next steps (Photo Frame):
   1. source $VENV/bin/activate
   2. python $REPO_DIR/photoframe/prepare_images.py ~/Pictures
   3. The default weather city is McLean, Virginia, US.
-     Edit $REPO_DIR/photoframe/config.json to change weather.location,
+     Create $REPO_DIR/photoframe/config.local.json (or edit config.json) to override settings,
      or pass --city/--country/--state to install-service.sh.
   4. $REPO_DIR/photoframe/install-service.sh
      e.g. $REPO_DIR/photoframe/install-service.sh --city "Your City" --country US --state "Your State"
-  5. sudo reboot
+  5. Optional Always-On UK VPN & Wi-Fi Hotspot:
+     $REPO_DIR/vpn/install-vpn.sh
+  6. sudo reboot
 
 Preview without the panel:
   python $REPO_DIR/photoframe/photoframe.py --preview /tmp/frame.png --offline

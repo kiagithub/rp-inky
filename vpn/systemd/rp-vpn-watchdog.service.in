@@ -1,0 +1,8 @@
+[Unit]
+Description=rp-inky VPN Health Check & UK Auto-Failover Watchdog
+After=rp-vpn.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 __VPN_DIR__/manager.py --config __VPN_DIR__/config.json watchdog
+Environment=PYTHONUNBUFFERED=1

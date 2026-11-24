@@ -455,3 +455,15 @@ def test_prepare_images_skips_existing(tmp_path):
     output.parent.mkdir()
     output.write_bytes(b"existing")
     assert pfp.convert_image(source, output).startswith("skipped")
+
+
+def test_load_config_merges_local_override(tmp_path):
+    cfg = tmp_path / "config.json"
+    local_cfg = tmp_path / "config.local.json"
+    cfg.write_text(json.dumps({"weather": {"location": "McLean", "country_code": "US", "units": "metric"}}), encoding="utf-8")
+    local_cfg.write_text(json.dumps({"weather": {"location": "London", "country_code": "GB"}}), encoding="utf-8")
+    loaded = pf.load_config(cfg)
+    assert loaded["weather"]["location"] == "London"
+    assert loaded["weather"]["country_code"] == "GB"
+    assert loaded["weather"]["units"] == "metric"
+

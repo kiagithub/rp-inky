@@ -694,12 +694,19 @@ def validate_config(config):
 
 
 def load_config(config_path):
-    """Load config.json (or defaults), validate it and resolve paths."""
+    """Load config.json (plus optional config.local.json), validate and resolve paths."""
     config_path = Path(config_path).expanduser().resolve()
     user_config = read_json(config_path, {})
     if not isinstance(user_config, dict):
         LOG.warning("%s does not contain a JSON object; using defaults", config_path)
         user_config = {}
+    local_path = config_path.with_name(f"{config_path.stem}.local{config_path.suffix}")
+    if local_path != config_path and local_path.is_file():
+        local_config = read_json(local_path, {})
+        if isinstance(local_config, dict):
+            user_config = deep_merge(user_config, local_config)
+        else:
+            LOG.warning("%s does not contain a JSON object; ignoring", local_path)
     config = validate_config(deep_merge(DEFAULT_CONFIG, user_config))
 
     base_dir = config_path.parent

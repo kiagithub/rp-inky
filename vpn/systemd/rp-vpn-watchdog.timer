@@ -1,0 +1,11 @@
+[Unit]
+Description=Run rp-inky VPN watchdog every 45 seconds
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=45s
+AccuracySec=5s
+Unit=rp-vpn-watchdog.service
+
+[Install]
+WantedBy=timers.target

@@ -84,8 +84,9 @@ nano photoframe/config.json
   Run it without flags to keep the default McLean, Virginia, US. Passing
   `--city` without country/state clears those fields and searches worldwide.
 
-`config.json` is tracked in git; if you edit it, keep your weather settings when
-resolving a later `git pull`.
+`config.json` is tracked in git; to avoid merge conflicts on a later `git pull`,
+you can place your personal settings in `photoframe/config.local.json` (git-ignored
+and automatically merged over `config.json`).
 
 Other useful settings:
 

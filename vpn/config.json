@@ -1,0 +1,52 @@
+{
+  "wan_interface": "eth0",
+  "preferred_country": "uk",
+  "prefer_protocol": "wireguard",
+  "route_table": 51820,
+  "dns_servers": [
+    "162.252.172.57",
+    "149.154.159.92"
+  ],
+  "force_vpn_dns": true,
+  "disable_ipv6": true,
+  "allow_lan_gateway": true,
+  "wireguard": {
+    "interface": "wg-vpn",
+    "mtu": 1420,
+    "persistent_keepalive": 25,
+    "private_key": ""
+  },
+  "openvpn": {
+    "interface": "tun-vpn",
+    "auth_file": "auth.txt",
+    "data_ciphers": "CHACHA20-POLY1305:AES-128-GCM:AES-256-GCM:AES-256-CBC"
+  },
+  "hotspot": {
+    "enabled": true,
+    "interface": "wlan0",
+    "ssid": "RP-UK-VPN",
+    "passphrase": "",
+    "country_code": "US",
+    "band": "5g",
+    "channel": 36,
+    "vht80": true,
+    "gateway_ip": "10.42.0.1",
+    "subnet_cidr": "10.42.0.0/24",
+    "dhcp_start": "10.42.0.100",
+    "dhcp_end": "10.42.0.200",
+    "dhcp_lease": "12h",
+    "allow_ssh": true
+  },
+  "watchdog": {
+    "enabled": true,
+    "auto_failover": true,
+    "failover_threshold": 2,
+    "max_handshake_age_seconds": 180,
+    "probe_targets": [
+      "1.1.1.1",
+      "9.9.9.9",
+      "8.8.8.8"
+    ],
+    "probe_timeout_seconds": 3
+  }
+}

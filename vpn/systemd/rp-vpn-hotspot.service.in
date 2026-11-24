@@ -1,0 +1,14 @@
+[Unit]
+Description=rp-inky VPN Wi-Fi Hotspot & Kill-Switch Firewall
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 __VPN_DIR__/manager.py --config __VPN_DIR__/config.json hotspot-up
+ExecStop=/usr/bin/python3 __VPN_DIR__/manager.py --config __VPN_DIR__/config.json hotspot-down
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
