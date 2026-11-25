@@ -15,10 +15,12 @@ import ipaddress
 import json
 import logging
 import os
+import random
 import re
 import shlex
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -642,6 +644,7 @@ def select_failover_candidates(
 def build_wireguard_runtime_config(
     profile_text: str,
     config: dict[str, Any],
+    endpoint_override: Optional[str] = None,
 ) -> tuple[str, list[str], list[str]]:
     """Sanitize a WireGuard .conf into a safe, high-speed wg-quick config.
 
@@ -740,6 +743,9 @@ def build_wireguard_runtime_config(
         for key, value in peer_kv:
             key_low = key.lower()
             if key_low == "persistentkeepalive":
+                continue
+            if key_low == "endpoint" and endpoint_override:
+                out_lines.append(f"Endpoint = {endpoint_override}")
                 continue
             if key_low == "allowedips":
                 has_allowed = True
@@ -1073,6 +1079,161 @@ def interface_exists(iface: str) -> bool:
     return Path(f"/sys/class/net/{iface}").exists()
 
 
+SURFSHARK_PRIVATE_DNS = {"162.252.172.57", "149.154.159.92"}
+PUBLIC_FALLBACK_DNS = ("1.1.1.1", "8.8.8.8", "9.9.9.9")
+
+
+def _encode_dns_query(hostname: str, txid: int) -> bytes:
+    """Build a minimal RFC 1035 UDP DNS A-record query packet."""
+    header = struct.pack("!HHHHHH", txid & 0xFFFF, 0x0100, 1, 0, 0, 0)
+    qname = b"".join(
+        bytes([len(label)]) + label.encode("ascii")
+        for label in hostname.strip(".").split(".")
+        if label
+    ) + b"\x00"
+    return header + qname + struct.pack("!HH", 1, 1)
+
+
+def _skip_dns_name(packet: bytes, offset: int) -> int:
+    """Advance offset past a (possibly compressed) DNS name in packet."""
+    length = len(packet)
+    while offset < length:
+        tag = packet[offset]
+        if tag == 0:
+            return offset + 1
+        if (tag & 0xC0) == 0xC0:
+            return offset + 2
+        offset += 1 + tag
+    return length
+
+
+def _decode_dns_a_response(packet: bytes, expected_txid: int) -> Optional[str]:
+    """Extract the first IPv4 A record from a UDP DNS response packet."""
+    if len(packet) < 12:
+        return None
+    txid, flags, qdcount, ancount, _, _ = struct.unpack("!HHHHHH", packet[:12])
+    if txid != (expected_txid & 0xFFFF) or (flags & 0x8000) == 0 or (flags & 0x000F) != 0 or ancount == 0:
+        return None
+    offset = 12
+    for _ in range(qdcount):
+        offset = _skip_dns_name(packet, offset) + 4
+    for _ in range(ancount):
+        if offset >= len(packet):
+            break
+        offset = _skip_dns_name(packet, offset)
+        if offset + 10 > len(packet):
+            break
+        rtype, rclass, _, rdlength = struct.unpack("!HHIH", packet[offset : offset + 10])
+        offset += 10
+        if offset + rdlength > len(packet):
+            break
+        if rtype == 1 and rclass == 1 and rdlength == 4:
+            return socket.inet_ntoa(packet[offset : offset + 4])
+        offset += rdlength
+    return None
+
+
+def query_dns_a_direct(hostname: str, nameservers: tuple[str, ...] = PUBLIC_FALLBACK_DNS, timeout: float = 2.0) -> Optional[str]:
+    """Resolve an IPv4 hostname directly via UDP port 53, bypassing broken /etc/resolv.conf."""
+    with suppress(ValueError):
+        return str(ipaddress.IPv4Address(hostname))
+    txid = random.randint(1, 0xFFFE)
+    query = _encode_dns_query(hostname, txid)
+    for server in nameservers:
+        with suppress(OSError):
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.settimeout(timeout)
+                sock.sendto(query, (server, 53))
+                reply, _ = sock.recvfrom(512)
+            resolved = _decode_dns_a_response(reply, txid)
+            if resolved:
+                return resolved
+    return None
+
+
+def resolve_endpoint_ipv4(host: str) -> Optional[str]:
+    """Resolve endpoint hostname to IPv4, using direct public DNS first to avoid resolv.conf hangs."""
+    if not host:
+        return None
+    direct = query_dns_a_direct(host)
+    if direct:
+        return direct
+    with suppress(OSError):
+        infos = socket.getaddrinfo(host, None, family=socket.AF_INET, type=socket.SOCK_DGRAM)
+        if infos:
+            return str(infos[0][4][0])
+    return None
+
+
+def resolv_conf_needs_repair(resolv_text: str) -> bool:
+    """Return True if /etc/resolv.conf has no nameservers or only Surfshark VPN-internal DNS."""
+    servers: list[str] = []
+    for raw_line in resolv_text.splitlines():
+        line = raw_line.split("#", 1)[0].split(";", 1)[0].strip()
+        parts = line.split()
+        if len(parts) >= 2 and parts[0].lower() == "nameserver":
+            servers.append(parts[1])
+    if not servers:
+        return True
+    # Surfshark's 162.252.172.57 / 149.154.159.92 drop queries coming from non-VPN WAN IPs!
+    return all(server in SURFSHARK_PRIVATE_DNS for server in servers)
+
+
+def ensure_host_dns_healthy(resolv_path: Path = Path("/etc/resolv.conf")) -> None:
+    """Repair /etc/resolv.conf if legacy openresolv left it pointing only to VPN-only DNS."""
+    try:
+        current = resolv_path.read_text(encoding="utf-8", errors="replace") if resolv_path.exists() else ""
+    except OSError:
+        current = ""
+    if not resolv_conf_needs_repair(current):
+        return
+
+    LOG.warning("Host /etc/resolv.conf has no reachable WAN DNS (left over from openresolv); repairing.")
+    if shutil.which("resolvconf"):
+        run_cmd(["resolvconf", "-d", "wg0", "-f"], check=False)
+
+    # Discover default WAN gateway (usually home router DNS forwarder) as primary, plus Cloudflare/Google
+    router_dns = ""
+    route_res = run_cmd(["ip", "-4", "-j", "route", "show", "default"], check=False)
+    if route_res.returncode == 0 and route_res.stdout.strip():
+        with suppress(ValueError, KeyError, IndexError, TypeError):
+            routes = json.loads(route_res.stdout)
+            gw = routes[0].get("gateway")
+            if gw:
+                router_dns = str(ipaddress.IPv4Address(gw))
+
+    lines = ["# Repaired by rp-vpn (WAN DNS for host services)"]
+    if router_dns and router_dns not in SURFSHARK_PRIVATE_DNS:
+        lines.append(f"nameserver {router_dns}")
+    lines.append("nameserver 1.1.1.1")
+    lines.append("nameserver 8.8.8.8")
+    with suppress(OSError):
+        if resolv_path.is_symlink():
+            resolv_path.unlink()
+        write_text_atomic(resolv_path, "\n".join(lines) + "\n", mode=0o644)
+
+
+def ensure_networkmanager_unmanaged(config: dict[str, Any]) -> None:
+    """Tell NetworkManager to ignore hotspot and VPN tunnel interfaces so it never flushes their IPs."""
+    ifaces = [
+        config["hotspot"]["interface"],
+        config["wireguard"]["interface"],
+        config["openvpn"]["interface"],
+    ]
+    if Path("/etc/NetworkManager/conf.d").is_dir():
+        spec = ";".join(f"interface-name:{name}" for name in ifaces)
+        nm_conf = f"[keyfile]\nunmanaged-devices={spec}\n"
+        current = NM_UNMANAGED_DEST.read_text(encoding="utf-8", errors="replace") if NM_UNMANAGED_DEST.is_file() else ""
+        if current != nm_conf:
+            write_text_atomic(NM_UNMANAGED_DEST, nm_conf, mode=0o644)
+            if shutil.which("nmcli"):
+                run_cmd(["nmcli", "general", "reload"], check=False)
+    if shutil.which("nmcli"):
+        for name in ifaces:
+            if interface_exists(name):
+                run_cmd(["nmcli", "device", "set", name, "managed", "no"], check=False)
+
+
 def get_interface_ipv4(iface: str) -> Optional[str]:
     """Return the primary IPv4 address assigned to iface, or None."""
     result = run_cmd(["ip", "-4", "-j", "addr", "show", "dev", iface], check=False)
@@ -1238,7 +1399,19 @@ def start_wireguard_profile(profile: Profile, config: dict[str, Any]) -> list[st
     wg_iface = config["wireguard"]["interface"]
     table = str(config["route_table"])
     raw_text = profile.path.read_text(encoding="utf-8", errors="replace")
-    rendered, ipv4_hosts, dns_servers = build_wireguard_runtime_config(raw_text, config)
+
+    endpoint_override = None
+    if profile.endpoint_host and profile.endpoint_port:
+        resolved_ip = resolve_endpoint_ipv4(profile.endpoint_host)
+        if resolved_ip:
+            endpoint_override = f"{resolved_ip}:{profile.endpoint_port}"
+            LOG.info("Resolved %s -> %s", profile.endpoint_host, endpoint_override)
+
+    rendered, ipv4_hosts, dns_servers = build_wireguard_runtime_config(
+        raw_text,
+        config,
+        endpoint_override=endpoint_override,
+    )
 
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     wg_conf = RUNTIME_DIR / f"{wg_iface}.conf"
@@ -1247,6 +1420,12 @@ def start_wireguard_profile(profile: Profile, config: dict[str, Any]) -> list[st
     res = run_cmd(["wg-quick", "up", str(wg_conf)], check=False, timeout=30)
     if res.returncode != 0:
         raise RuntimeError(f"wg-quick up failed for '{profile.name}': {res.stderr.strip() or res.stdout.strip()}")
+
+    if shutil.which("nmcli"):
+        run_cmd(["nmcli", "device", "set", wg_iface, "managed", "no"], check=False)
+    # Re-ensure IPv4 address is present in case a network daemon raced wg-quick
+    if not get_interface_ipv4(wg_iface) and ipv4_hosts:
+        run_cmd(["ip", "-4", "addr", "replace", f"{ipv4_hosts[0]}/16", "dev", wg_iface], check=False)
 
     if config.get("disable_ipv6", True):
         run_cmd(["sysctl", "-w", f"net.ipv6.conf.{wg_iface}.disable_ipv6=1"], check=False)
@@ -1358,6 +1537,8 @@ def handle_openvpn_route_up(config: dict[str, Any]) -> int:
 def service_start(config: dict[str, Any]) -> int:
     """Start the active VPN profile, update firewall/DHCP DNS, and enable RPS."""
     require_root()
+    ensure_host_dns_healthy()
+    ensure_networkmanager_unmanaged(config)
     profiles = discover_profiles(config["_profiles_dir"])
     profile = resolve_active_profile(config, profiles)
 
@@ -1408,6 +1589,8 @@ def _refresh_dnsmasq_if_running(config: dict[str, Any], dns_servers: list[str]) 
 def hotspot_up(config: dict[str, Any]) -> int:
     """Configure Wi-Fi interface, kill-switch firewall, DHCP server and 5 GHz hostapd AP."""
     require_root()
+    ensure_host_dns_healthy()
+    ensure_networkmanager_unmanaged(config)
     ensure_policy_routing_base(config)
     apply_nftables(config, dns_servers=config["dns_servers"])
 
@@ -1424,12 +1607,7 @@ def hotspot_up(config: dict[str, Any]) -> int:
     hostapd_text = build_hostapd_config(config)
     dnsmasq_text = build_dnsmasq_config(config, dns_servers=config["dns_servers"])
 
-    # Prevent NetworkManager and wpa_supplicant from fighting hostapd over wlan0
-    if Path("/etc/NetworkManager/conf.d").is_dir():
-        nm_conf = f"[keyfile]\nunmanaged-devices=interface-name:{ap_iface}\n"
-        write_text_atomic(NM_UNMANAGED_DEST, nm_conf, mode=0o644)
-    if shutil.which("nmcli"):
-        run_cmd(["nmcli", "device", "set", ap_iface, "managed", "no"], check=False)
+    # Prevent wpa_supplicant from fighting hostapd over the AP interface
     run_cmd(["systemctl", "stop", f"wpa_supplicant@{ap_iface}.service"], check=False)
 
     if shutil.which("rfkill"):
@@ -1564,14 +1742,10 @@ def refresh_wireguard_endpoint_dns(profile: Profile, wg_iface: str) -> bool:
     """Re-resolve a Surfshark WireGuard hostname over WAN and update peer endpoint in-place."""
     if not profile.endpoint_host or not profile.endpoint_port or not profile.public_key:
         return False
-    try:
-        infos = socket.getaddrinfo(profile.endpoint_host, profile.endpoint_port, family=socket.AF_INET, type=socket.SOCK_DGRAM)
-    except OSError as exc:
-        LOG.warning("DNS lookup failed for %s: %s", profile.endpoint_host, exc)
+    resolved_ip = resolve_endpoint_ipv4(profile.endpoint_host)
+    if not resolved_ip:
+        LOG.warning("DNS lookup failed for %s", profile.endpoint_host)
         return False
-    if not infos:
-        return False
-    resolved_ip = infos[0][4][0]
     res = run_cmd(
         ["wg", "set", wg_iface, "peer", profile.public_key, "endpoint", f"{resolved_ip}:{profile.endpoint_port}"],
         check=False,
@@ -1954,6 +2128,8 @@ def cmd_benchmark(config: dict[str, Any], megabytes: int = 25) -> int:
     """Measure direct WAN throughput vs VPN tunnel throughput to isolate bottlenecks."""
     if not shutil.which("curl"):
         raise RuntimeError("curl is required for 'rp-vpn benchmark'. Install with: sudo apt install curl")
+    if os.geteuid() == 0:
+        ensure_host_dns_healthy()
 
     byte_count = max(5, min(200, megabytes)) * 1_000_000
     wan_iface = config["wan_interface"]
