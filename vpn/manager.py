@@ -1446,6 +1446,7 @@ def start_wireguard_profile(profile: Profile, config: dict[str, Any]) -> list[st
         raise RuntimeError(f"Failed to add WireGuard default route in table {table}: {route_res.stderr.strip()}")
 
     _delete_rules_at_priority(RULE_PRIO_VPN_SRC)
+    run_cmd(["ip", "-4", "rule", "add", "oif", wg_iface, "lookup", table, "priority", str(RULE_PRIO_VPN_SRC)], check=False)
     for host_ip in ipv4_hosts:
         run_cmd(["ip", "-4", "rule", "add", "from", f"{host_ip}/32", "lookup", table, "priority", str(RULE_PRIO_VPN_SRC)], check=False)
 
@@ -1538,8 +1539,9 @@ def handle_openvpn_route_up(config: dict[str, Any]) -> int:
     else:
         run_cmd(["ip", "-4", "route", "replace", "default", "dev", dev, "table", table], check=False)
 
+    _delete_rules_at_priority(RULE_PRIO_VPN_SRC)
+    run_cmd(["ip", "-4", "rule", "add", "oif", dev, "lookup", table, "priority", str(RULE_PRIO_VPN_SRC)], check=False)
     if local_ip:
-        _delete_rules_at_priority(RULE_PRIO_VPN_SRC)
         run_cmd(["ip", "-4", "rule", "add", "from", f"{local_ip}/32", "lookup", table, "priority", str(RULE_PRIO_VPN_SRC)], check=False)
     return 0
 
@@ -1863,14 +1865,24 @@ def run_watchdog(config: dict[str, Any]) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _format_bytes(num_bytes: int) -> str:
+    """Format byte counters cleanly in KiB, MiB or GiB."""
+    if num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024.0:.1f} KiB"
+    if num_bytes < 1024 * 1024 * 1024:
+        return f"{num_bytes / (1024.0 * 1024.0):.1f} MiB"
+    return f"{num_bytes / (1024.0 * 1024.0 * 1024.0):.2f} GiB"
+
+
 def fetch_exit_ip_info(iface: Optional[str] = None, timeout: int = 5) -> dict[str, str]:
     """Query public IP & geo location, optionally bound to a specific interface via curl."""
     if iface and shutil.which("curl"):
-        res = run_cmd(
-            ["curl", "-4", "-sS", "--max-time", str(timeout), "--interface", iface, "https://ipinfo.io/json"],
-            check=False,
-            timeout=timeout + 3,
-        )
+        cmd = ["curl", "-4", "-sS", "--max-time", str(timeout), "--interface", iface]
+        resolved = resolve_endpoint_ipv4("ipinfo.io")
+        if resolved:
+            cmd.extend(["--resolve", f"ipinfo.io:443:{resolved}"])
+        cmd.append("https://ipinfo.io/json")
+        res = run_cmd(cmd, check=False, timeout=timeout + 3)
         if res.returncode == 0 and res.stdout.strip():
             with suppress(ValueError, TypeError):
                 data = json.loads(res.stdout)
@@ -2070,9 +2082,8 @@ def cmd_status(config: dict[str, Any]) -> int:
             if xfer:
                 parts = xfer.splitlines()[0].split()
                 if len(parts) >= 3:
-                    rx_mb = int(parts[1]) / (1024 * 1024)
-                    tx_mb = int(parts[2]) / (1024 * 1024)
-                    print(f"WG transfer    : RX {rx_mb:.1f} MiB / TX {tx_mb:.1f} MiB")
+                    with suppress(ValueError):
+                        print(f"WG transfer    : RX {_format_bytes(int(parts[1]))} / TX {_format_bytes(int(parts[2]))}")
         exit_info = fetch_exit_ip_info(tun_iface, timeout=4)
         if exit_info.get("ip"):
             print(
@@ -2106,25 +2117,26 @@ def cmd_status(config: dict[str, Any]) -> int:
 
 def _measure_curl_mbps(iface: str, byte_count: int) -> Optional[float]:
     """Download byte_count from Cloudflare speed endpoint bound to iface and return Mbps."""
-    url = f"https://speed.cloudflare.com/__down?bytes={byte_count}"
-    res = run_cmd(
-        [
-            "curl",
-            "-4",
-            "-sS",
-            "-o",
-            "/dev/null",
-            "-w",
-            "%{speed_download}",
-            "--max-time",
-            "25",
-            "--interface",
-            iface,
-            url,
-        ],
-        check=False,
-        timeout=30,
-    )
+    host = "speed.cloudflare.com"
+    url = f"https://{host}/__down?bytes={byte_count}"
+    cmd = [
+        "curl",
+        "-4",
+        "-sS",
+        "-o",
+        "/dev/null",
+        "-w",
+        "%{speed_download}",
+        "--max-time",
+        "25",
+        "--interface",
+        iface,
+    ]
+    resolved = resolve_endpoint_ipv4(host)
+    if resolved:
+        cmd.extend(["--resolve", f"{host}:443:{resolved}"])
+    cmd.append(url)
+    res = run_cmd(cmd, check=False, timeout=30)
     if res.returncode != 0 or not res.stdout.strip():
         return None
     try:
