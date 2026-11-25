@@ -303,7 +303,7 @@ Quick reference:
 
 Alongside the photo frame, the Pi 4 can run an **always-on, high-speed UK VPN
 router and 5 GHz 802.11ac (`VHT80`) Wi-Fi hotspot** (`vpn/`). Policy routing
-(`Table 51820`) keeps the Pi's own weather/Nominatim and SSH traffic on `eth0`,
+(`Table 52000`) keeps the Pi's own weather/Nominatim and SSH traffic on `eth0`,
 while strictly routing and kill-switching all Hotspot and LAN Gateway client
 traffic through Surfshark (supporting multiple WireGuard `.conf` and OpenVPN
 `.ovpn` configs with automatic UK failover and 500+ Mbps forwarding).

@@ -45,7 +45,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "wan_interface": "eth0",
     "preferred_country": "uk",
     "prefer_protocol": "wireguard",
-    "route_table": 51820,
+    "route_table": 52000,
     "dns_servers": ["162.252.172.57", "149.154.159.92"],
     "force_vpn_dns": True,
     "disable_ipv6": True,
@@ -259,12 +259,12 @@ def validate_vpn_config(config: dict[str, Any]) -> dict[str, Any]:
     config["prefer_protocol"] = prefer_proto if prefer_proto in ("wireguard", "openvpn") else "wireguard"
 
     try:
-        table = int(config.get("route_table", 51820))
+        table = int(config.get("route_table", 52000))
     except (TypeError, ValueError):
-        table = 51820
+        table = 52000
     if table in (0, 253, 254, 255) or table < 1 or table > 2147483647:
-        LOG.warning("Invalid route_table %r; using 51820", config.get("route_table"))
-        table = 51820
+        LOG.warning("Invalid route_table %r; using 52000", config.get("route_table"))
+        table = 52000
     config["route_table"] = table
 
     raw_dns = config.get("dns_servers")
@@ -648,7 +648,6 @@ def build_wireguard_runtime_config(
     Returns (rendered_config, ipv4_addresses, extracted_dns_servers).
     """
     disable_ipv6 = bool(config.get("disable_ipv6", True))
-    route_table = int(config["route_table"])
     mtu = int(config["wireguard"]["mtu"])
     keepalive = int(config["wireguard"]["persistent_keepalive"])
     fallback_privkey = str(config["wireguard"].get("private_key") or "").strip()
@@ -723,12 +722,14 @@ def build_wireguard_runtime_config(
         raise ValueError("WireGuard profile has no [Peer] section.")
 
     all_addrs = ipv4_addrs + other_addrs
+    # Table = off prevents wg-quick from colliding with existing routes;
+    # start_wireguard_profile manages our dedicated policy routing table directly.
     out_lines = [
         "[Interface]",
         f"PrivateKey = {private_key}",
         f"Address = {', '.join(all_addrs)}",
         f"MTU = {mtu}",
-        f"Table = {route_table}",
+        "Table = off",
         *extra_iface_lines,
     ]
 
@@ -1125,13 +1126,22 @@ def _delete_rules_at_priority(priority: int) -> None:
             break
 
 
+def set_vpn_table_blackhole(config: dict[str, Any]) -> None:
+    """Flush the dedicated VPN routing table and install a fail-closed blackhole route."""
+    table = str(config["route_table"])
+    run_cmd(["ip", "-4", "route", "flush", "table", table], check=False)
+    run_cmd(["ip", "-4", "route", "add", "blackhole", "default", "table", table], check=False)
+
+
 def ensure_policy_routing_base(config: dict[str, Any]) -> None:
-    """Install policy routing rules and the table blackhole leak fallback."""
+    """Install policy routing rules and initialize the blackhole route if no tunnel is up."""
     table = str(config["route_table"])
     hotspot = config["hotspot"]
+    wg_iface = config["wireguard"]["interface"]
+    ovpn_iface = config["openvpn"]["interface"]
 
-    # Always keep a high-metric blackhole route in the VPN table so packets fail closed
-    run_cmd(["ip", "-4", "route", "replace", "blackhole", "default", "metric", "9999", "table", table], check=False)
+    if not interface_exists(wg_iface) and not interface_exists(ovpn_iface):
+        set_vpn_table_blackhole(config)
 
     _delete_rules_at_priority(RULE_PRIO_MULTICAST)
     run_cmd(["ip", "-4", "rule", "add", "to", "224.0.0.0/4", "lookup", "main", "priority", str(RULE_PRIO_MULTICAST)], check=False)
@@ -1220,10 +1230,11 @@ def stop_tunnel_processes(config: dict[str, Any]) -> None:
         run_cmd(["ip", "link", "del", "dev", ovpn_iface], check=False)
 
     _delete_rules_at_priority(RULE_PRIO_VPN_SRC)
+    set_vpn_table_blackhole(config)
 
 
 def start_wireguard_profile(profile: Profile, config: dict[str, Any]) -> list[str]:
-    """Bring up a WireGuard profile and install table 51820 routing."""
+    """Bring up a WireGuard profile and install policy routing."""
     wg_iface = config["wireguard"]["interface"]
     table = str(config["route_table"])
     raw_text = profile.path.read_text(encoding="utf-8", errors="replace")
@@ -1240,7 +1251,10 @@ def start_wireguard_profile(profile: Profile, config: dict[str, Any]) -> list[st
     if config.get("disable_ipv6", True):
         run_cmd(["sysctl", "-w", f"net.ipv6.conf.{wg_iface}.disable_ipv6=1"], check=False)
     run_cmd(["ip", "link", "set", "dev", wg_iface, "txqueuelen", "2000"], check=False)
-    run_cmd(["ip", "-4", "route", "replace", "default", "dev", wg_iface, "metric", "100", "table", table], check=False)
+    run_cmd(["ip", "-4", "route", "flush", "table", table], check=False)
+    route_res = run_cmd(["ip", "-4", "route", "replace", "default", "dev", wg_iface, "table", table], check=False)
+    if route_res.returncode != 0:
+        raise RuntimeError(f"Failed to add WireGuard default route in table {table}: {route_res.stderr.strip()}")
 
     _delete_rules_at_priority(RULE_PRIO_VPN_SRC)
     for host_ip in ipv4_hosts:
@@ -1329,10 +1343,11 @@ def handle_openvpn_route_up(config: dict[str, Any]) -> int:
         run_cmd(["sysctl", "-w", f"net.ipv6.conf.{dev}.disable_ipv6=1"], check=False)
     run_cmd(["ip", "link", "set", "dev", dev, "txqueuelen", "2000"], check=False)
 
+    run_cmd(["ip", "-4", "route", "flush", "table", table], check=False)
     if vpn_gateway:
-        run_cmd(["ip", "-4", "route", "replace", "default", "via", vpn_gateway, "dev", dev, "metric", "100", "table", table], check=False)
+        run_cmd(["ip", "-4", "route", "replace", "default", "via", vpn_gateway, "dev", dev, "table", table], check=False)
     else:
-        run_cmd(["ip", "-4", "route", "replace", "default", "dev", dev, "metric", "100", "table", table], check=False)
+        run_cmd(["ip", "-4", "route", "replace", "default", "dev", dev, "table", table], check=False)
 
     if local_ip:
         _delete_rules_at_priority(RULE_PRIO_VPN_SRC)

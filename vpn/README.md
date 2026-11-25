@@ -142,9 +142,9 @@ Tracked defaults live in [vpn/config.json](config.json). Put personal overrides 
 
 ## 5. How Routing & Photo Frame Coexistence Work
 
-* **Dedicated Policy Routing Table (`51820`)**:
+* **Dedicated Policy Routing Table (`52000`)**:
   - The Pi's own `main` routing table stays on `eth0`. That means `ssh pi@raspberrypi.local`, `git pull`, NTP, and `inky-photoframe.service` (Open-Meteo weather + Nominatim photo geocoding) work directly over your home connection — you are **never locked out of SSH** if a VPN server goes down, and Nominatim never blocks your photo lookups.
-  - Traffic entering `wlan0` (Hotspot) or forwarded through `eth0` (LAN Gateway clients) matches `ip rule ... lookup 51820`, which contains the VPN default route (`metric 100`) backed by a `blackhole default metric 9999` route.
+  - Traffic entering `wlan0` (Hotspot) or forwarded through `eth0` (LAN Gateway clients) matches `ip rule ... lookup 52000`, which contains the VPN default route when up and a `blackhole default` route when down.
 * **Double-Layer Leak Protection**:
   - Even while switching profiles or booting before WireGuard connects, `nftables` (`table inet rp_vpn`) drops 100% of Hotspot and LAN-Gateway forward packets not exiting `wg-vpn` or `tun-vpn`.
 

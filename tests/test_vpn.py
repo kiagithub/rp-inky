@@ -67,7 +67,7 @@ def test_load_vpn_config_merges_local_override(tmp_path):
     loaded = vm.load_vpn_config(cfg_path)
     assert loaded["hotspot"]["ssid"] == "MyUKHotspot"
     assert loaded["hotspot"]["passphrase"] == "StrongPassword123"
-    assert loaded["route_table"] == 51820
+    assert loaded["route_table"] == 52000
 
 
 def test_import_profiles_handles_wireguard_and_openvpn_collision(tmp_path):
@@ -124,7 +124,7 @@ def test_build_wireguard_runtime_config_sanitizes_and_injects_tuning(tmp_path):
 
     assert ipv4_hosts == ["10.14.0.2"]
     assert dns_servers == ["162.252.172.57", "149.154.159.92"]
-    assert "Table = 51820" in rendered
+    assert "Table = off" in rendered
     assert "MTU = 1420" in rendered
     assert "PersistentKeepalive = 25" in rendered
     # Host DNS and unsafe hooks must be stripped; IPv6 filtered when disable_ipv6=True

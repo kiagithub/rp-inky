@@ -2,7 +2,7 @@
   "wan_interface": "eth0",
   "preferred_country": "uk",
   "prefer_protocol": "wireguard",
-  "route_table": 51820,
+  "route_table": 52000,
   "dns_servers": [
     "162.252.172.57",
     "149.154.159.92"
