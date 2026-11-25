@@ -71,7 +71,7 @@ def scan_lan_neighbors(interface: str = "eth0") -> list[dict[str, str]]:
 
     if shutil.which("ip"):
         cmd = ["ip", "-4", "neigh", "show", "dev", interface] if interface else ["ip", "-4", "neigh", "show"]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=4)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=4)
         if res.returncode == 0:
             for line in res.stdout.splitlines():
                 # Example: 192.168.86.42 lladdr aa:bb:cc:dd:ee:ff REACHABLE

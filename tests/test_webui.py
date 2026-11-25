@@ -392,3 +392,18 @@ def test_network_scanner_bandwidth_and_alias_endpoints(tmp_path, monkeypatch):
     assert renamed["icon"] == "🔌"
 
 
+def test_discover_mdns_hosts_handles_non_utf8_txt_records(monkeypatch):
+    class RawBytesProc:
+        returncode = 0
+        stdout = (
+            b"=;eth0;IPv4;Living\\032Room\\032TV;_airplay._tcp;local;LGwebOSTV.local;192.168.86.44;7000;\"pk=\xff\xfe\x80\"\n"
+        )
+
+    monkeypatch.setattr(wn.shutil, "which", lambda name: "/usr/bin/avahi-browse" if name == "avahi-browse" else None)
+    monkeypatch.setattr(wn.subprocess, "run", lambda *a, **kw: RawBytesProc())
+
+    parsed = wn.discover_mdns_hosts()
+    assert parsed["192.168.86.44"]["friendly"] == "Living Room TV"
+    assert "_airplay._tcp" in parsed["192.168.86.44"]["services"]
+
+

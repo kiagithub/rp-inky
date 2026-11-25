@@ -522,7 +522,7 @@ def get_default_gateway(interface: str = "") -> str:
     cmd = ["ip", "-4", "route", "show", "default"]
     if interface:
         cmd.extend(["dev", interface])
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=3)
+    res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=3)
     if res.returncode == 0:
         m = re.search(r"\bvia\s+(\d+\.\d+\.\d+\.\d+)", res.stdout)
         if m:
@@ -538,6 +538,8 @@ def get_interface_cidr(interface: str) -> Optional[ipaddress.IPv4Network]:
         ["ip", "-4", "-o", "addr", "show", "dev", interface],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=3,
     )
@@ -578,16 +580,17 @@ def discover_mdns_hosts(timeout_sec: int = 3) -> dict[str, dict[str, Any]]:
     if not shutil.which("avahi-browse"):
         return {}
     try:
+        # Capture raw bytes because mDNS TXT records (AirPlay/HomeKit/Matter) often contain binary blobs
         res = subprocess.run(
             ["avahi-browse", "-a", "-t", "-r", "-p"],
             capture_output=True,
-            text=True,
             check=False,
             timeout=timeout_sec + 2,
         )
-        if res.returncode == 0:
-            return parse_avahi_browse(res.stdout)
-    except (OSError, subprocess.TimeoutExpired):
+        if res.returncode == 0 and res.stdout:
+            text_out = res.stdout.decode("utf-8", errors="replace") if isinstance(res.stdout, bytes) else str(res.stdout)
+            return parse_avahi_browse(text_out)
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
         pass
     return {}
 
@@ -763,6 +766,8 @@ class NetworkScanner:
                 ["iw", "dev", ap_iface, "station", "dump"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
                 timeout=3,
             )
