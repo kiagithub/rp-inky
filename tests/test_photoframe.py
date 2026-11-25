@@ -467,3 +467,52 @@ def test_load_config_merges_local_override(tmp_path):
     assert loaded["weather"]["country_code"] == "GB"
     assert loaded["weather"]["units"] == "metric"
 
+
+def test_parse_hourly_weather_and_render_dashboard(tmp_path):
+    from photoframe import dashboard as pfd
+
+    payload = {
+        "current": {"time": "2026-11-24T14:15", "temperature_2m": 18.4, "weather_code": 2, "is_day": 1, "precipitation_probability": 25},
+        "daily": {"temperature_2m_max": [21.2], "temperature_2m_min": [9.8]},
+        "hourly": {
+            "time": [f"2026-11-24T{h:02d}:00" for h in range(24)] + [f"2026-11-25T{h:02d}:00" for h in range(12)],
+            "temperature_2m": [15.0 + (h % 6) for h in range(36)],
+            "precipitation_probability": [10 if h != 16 else 85 for h in range(36)],
+            "weather_code": [2 if h != 16 else 61 for h in range(36)],
+            "is_day": [1 if 7 <= (h % 24) <= 17 else 0 for h in range(36)],
+        },
+    }
+    weather = pf.parse_weather(payload, step_hours=3, use_24h=False)
+    assert weather.rain_chance == 25
+    assert weather.high == pytest.approx(21.2)
+    assert weather.low == pytest.approx(9.8)
+    assert len(weather.hourly) == 4
+    assert weather.hourly[0]["label"] == "3PM"
+    # Window 15:00..17:00 captures the 85% rain spike at 16:00!
+    assert weather.hourly[0]["rain"] == 85
+
+    cfg = pf.load_config(tmp_path / "config.json")
+    wisdom = pfd.select_daily_wisdom(cfg, tmp_path, offline=True)
+    frame = pfd.render_dashboard_frame(weather, wisdom, cfg)
+    assert frame.size == (480, 800)
+    # Uses only pure Spectra 6 palette colours (zero grey anti-aliasing)
+    palette_set = {pfd.BLACK, pfd.WHITE, pfd.YELLOW, pfd.RED, pfd.BLUE, pfd.GREEN}
+    used_colors = {color for _, color in frame.getcolors(maxcolors=1000)}
+    assert used_colors.issubset(palette_set)
+
+
+def test_schedule_window_and_mode_selection(tmp_path):
+    from datetime import datetime
+
+    assert pf.in_schedule_window("06:30-10:00", datetime(2026, 11, 24, 7, 15)) is True
+    assert pf.in_schedule_window("06:30-10:00", datetime(2026, 11, 24, 12, 0)) is False
+    # Overnight window
+    assert pf.in_schedule_window("22:00-06:00", datetime(2026, 11, 24, 23, 30)) is True
+    assert pf.in_schedule_window("22:00-06:00", datetime(2026, 11, 24, 5, 30)) is True
+
+    cfg = pf.load_config(tmp_path / "config.json")
+    cfg["dashboard"]["mode"] = "alternate"
+    assert pf.should_show_dashboard(cfg, {"last_view": "photo"}, images_available=True) is True
+    assert pf.should_show_dashboard(cfg, {"last_view": "dashboard"}, images_available=True) is False
+
+

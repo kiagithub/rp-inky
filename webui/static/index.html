@@ -50,8 +50,10 @@
         <div class="card">
           <div class="card-header">
             <h2>Live E-Ink Frame</h2>
-            <div class="btn-row">
-              <button id="btn-next-photo" class="btn btn-primary btn-sm">Next Random</button>
+            <div class="btn-row wrap-row">
+              <button id="btn-show-dash" class="btn btn-primary btn-sm">☀ Weather &amp; Quote</button>
+              <button id="btn-shuffle-wisdom" class="btn btn-ghost btn-sm">🎲 New Fact/Quote</button>
+              <button id="btn-next-photo" class="btn btn-ghost btn-sm">🖼 Next Photo</button>
               <button id="btn-unpin-photo" class="btn btn-ghost btn-sm hidden">Unpin</button>
             </div>
           </div>
@@ -59,6 +61,41 @@
             <img id="frame-preview-img" src="/api/frame/preview" alt="Live 480x800 frame preview">
           </div>
           <p id="frame-caption" class="muted center-text"></p>
+
+          <hr class="divider">
+          <h3>Screen Mode &amp; Daily Quote / Fact</h3>
+          <form id="dash-mode-form" class="stack-sm mt-sm">
+            <div class="row-inputs">
+              <div>
+                <label class="field-label">Display Mode</label>
+                <select id="dash-mode">
+                  <option value="alternate">Alternate (Photo ↔ Weather &amp; Quote)</option>
+                  <option value="dashboard">Weather &amp; Quote Always On</option>
+                  <option value="schedule">Scheduled Hours (Morning Card)</option>
+                  <option value="photos">Photos Only</option>
+                </select>
+              </div>
+              <div id="dash-sched-wrap" class="hidden">
+                <label class="field-label">Weather Card Hours</label>
+                <input type="text" id="dash-sched" placeholder="06:30-10:00" value="06:30-10:00">
+              </div>
+            </div>
+            <div class="row-inputs">
+              <div>
+                <label class="field-label">Daily Card Content</label>
+                <select id="dash-content">
+                  <option value="both">Mix Fun Facts &amp; Quotes</option>
+                  <option value="facts">Fun Facts Only</option>
+                  <option value="quotes">Quotes Only</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Custom Note / Quote (optional)</label>
+                <input type="text" id="dash-custom" placeholder="Leave blank for daily rotation">
+              </div>
+            </div>
+            <button type="submit" class="btn btn-ghost btn-sm full">Save Screen Mode Settings</button>
+          </form>
         </div>
 
         <div class="card">

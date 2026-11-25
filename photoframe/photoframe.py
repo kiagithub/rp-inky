@@ -98,6 +98,17 @@ DEFAULT_CONFIG = {
         "retries": 3,
         "retry_delay_seconds": 10,
     },
+    "dashboard": {
+        "mode": "photos",
+        "schedule_hours": "06:30-10:00",
+        "step_hours": 3,
+        "use_24h": False,
+        "content": "both",
+        "online_wisdom": False,
+        "custom_text": "",
+        "custom_source": "",
+        "custom_kind": "note",
+    },
 }
 
 BOLD_FONT_CANDIDATES = [
@@ -170,11 +181,16 @@ class PhotoMeta:
 
 @dataclass
 class Weather:
-    """Current weather shown in the footer."""
+    """Current and hourly weather forecast."""
 
     temperature: Optional[float] = None
     code: Optional[int] = None
     is_day: Optional[bool] = None
+    rain_chance: Optional[int] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    hourly: Optional[list[dict[str, Any]]] = None
+    location_name: Optional[str] = None
     fetched_at: Optional[str] = None
 
     @classmethod
@@ -690,6 +706,23 @@ def validate_config(config):
     weather["location"] = str(weather.get("location") or "").strip()
     weather["country_code"] = str(weather.get("country_code") or "").strip().upper()
     weather["admin1"] = str(weather.get("admin1") or "").strip()
+
+    dashboard = _ensure_dict(config, "dashboard")
+    mode = str(dashboard.get("mode") or "photos").strip().lower()
+    dashboard["mode"] = mode if mode in ("photos", "dashboard", "alternate", "schedule") else "photos"
+    dashboard["schedule_hours"] = str(dashboard.get("schedule_hours") or "06:30-10:00").strip()
+    try:
+        step = int(dashboard.get("step_hours", 3))
+    except (TypeError, ValueError):
+        step = 3
+    dashboard["step_hours"] = max(1, min(6, step))
+    dashboard["use_24h"] = bool(dashboard.get("use_24h", False))
+    content = str(dashboard.get("content") or "both").strip().lower()
+    dashboard["content"] = content if content in ("both", "facts", "quotes") else "both"
+    dashboard["online_wisdom"] = bool(dashboard.get("online_wisdom", False))
+    dashboard["custom_text"] = str(dashboard.get("custom_text") or "").strip()
+    dashboard["custom_source"] = str(dashboard.get("custom_source") or "").strip()
+    dashboard["custom_kind"] = str(dashboard.get("custom_kind") or "note").strip()
     return config
 
 
@@ -828,8 +861,10 @@ def resolve_weather_location(config, offline=False):
     return location
 
 
-def parse_weather(payload):
-    """Build a Weather from an Open-Meteo response."""
+def parse_weather(payload, step_hours=3, use_24h=False):
+    """Build a Weather (including hourly forecast + rain chance) from Open-Meteo."""
+    from photoframe.dashboard import extract_hourly_slots
+
     current = payload.get("current") if isinstance(payload, dict) else None
     current = current if isinstance(current, dict) else {}
     code = current.get("weather_code")
@@ -838,31 +873,54 @@ def parse_weather(payload):
         code = int(code) if code is not None else None
     except (TypeError, ValueError):
         code = None
+
+    rain_raw = _as_float(current.get("precipitation_probability"))
+    rain_chance = max(0, min(100, round(rain_raw))) if rain_raw is not None else None
+
+    daily = payload.get("daily") if isinstance(payload, dict) and isinstance(payload.get("daily"), dict) else {}
+    highs = daily.get("temperature_2m_max") or []
+    lows = daily.get("temperature_2m_min") or []
+    high_val = _as_float(highs[0]) if isinstance(highs, list) and highs else None
+    low_val = _as_float(lows[0]) if isinstance(lows, list) and lows else None
+
+    hourly_slots = extract_hourly_slots(payload, columns=4, step_hours=step_hours, use_24h=use_24h) if isinstance(payload, dict) else []
+    if rain_chance is None and hourly_slots:
+        rain_chance = hourly_slots[0].get("rain")
+
     return Weather(
         temperature=_as_float(current.get("temperature_2m")),
         code=code,
         is_day=bool(is_day) if is_day is not None else None,
+        rain_chance=rain_chance,
+        high=high_val,
+        low=low_val,
+        hourly=hourly_slots or None,
     )
 
 
-def fetch_weather(location, units="metric", timeout=HTTP_TIMEOUT):
-    """Fetch the current temperature and weather code from Open-Meteo."""
+def fetch_weather(location, units="metric", step_hours=3, use_24h=False, timeout=HTTP_TIMEOUT):
+    """Fetch current, hourly and daily weather + rain probability from Open-Meteo."""
     temperature_unit = "fahrenheit" if units == "imperial" else "celsius"
     params = {
         "latitude": f"{location['latitude']:.6f}",
         "longitude": f"{location['longitude']:.6f}",
-        "current": "temperature_2m,weather_code,is_day",
+        "current": "temperature_2m,weather_code,is_day,precipitation_probability",
+        "hourly": "temperature_2m,precipitation_probability,weather_code,is_day",
+        "daily": "temperature_2m_max,temperature_2m_min",
+        "timezone": "auto",
+        "forecast_days": 2,
         "temperature_unit": temperature_unit,
     }
-    weather = parse_weather(http_json(FORECAST_URL, params, timeout=timeout))
+    weather = parse_weather(http_json(FORECAST_URL, params, timeout=timeout), step_hours=step_hours, use_24h=use_24h)
+    weather.location_name = str(location.get("name") or "")
     weather.fetched_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     return weather
 
 
-def _fetch_weather_once(location, units, cache_path, cache_key):
+def _fetch_weather_once(location, units, cache_path, cache_key, step_hours=3, use_24h=False):
     """Fetch weather and update its cache; return (weather, error)."""
     try:
-        weather = fetch_weather(location, units)
+        weather = fetch_weather(location, units) if step_hours == 3 and not use_24h else fetch_weather(location, units, step_hours=step_hours, use_24h=use_24h)
     except Exception as exc:
         return None, exc
     try:
@@ -879,11 +937,14 @@ def get_weather(config, offline=False):
         return None
 
     units = config["weather"].get("units", "metric")
-    cache_key = f"{location['latitude']:.4f},{location['longitude']:.4f},{units}"
+    dash = config.get("dashboard") or {}
+    step_hours = int(dash.get("step_hours", 3))
+    use_24h = bool(dash.get("use_24h", False))
+    cache_key = f"{location['latitude']:.4f},{location['longitude']:.4f},{units},{step_hours},{int(use_24h)}"
     cache_path = config["_state_dir"] / "weather.json"
     cache = read_json(cache_path, {})
     cached = None
-    if isinstance(cache, dict) and cache.get("key") == cache_key:
+    if isinstance(cache, dict) and str(cache.get("key", "")).startswith(f"{location['latitude']:.4f},{location['longitude']:.4f},{units}"):
         try:
             cached = Weather.from_dict(cache.get("weather") or {})
         except (TypeError, ValueError):
@@ -898,7 +959,7 @@ def get_weather(config, offline=False):
     delay = max(0.0, float(config["weather"].get("retry_delay_seconds", 0)))
     last_error = None
     for attempt in range(attempts):
-        weather, error = _fetch_weather_once(location, units, cache_path, cache_key)
+        weather, error = _fetch_weather_once(location, units, cache_path, cache_key, step_hours=step_hours, use_24h=use_24h)
         if weather is not None:
             return weather
         last_error = error
@@ -1049,12 +1110,54 @@ def read_last_image(state_path):
 
 
 def write_last_image(state_path, name):
-    """Persist the last displayed image name while preserving any pinned_image."""
+    """Persist the last displayed image name while preserving persistent state keys."""
     state = read_frame_state(state_path)
-    new_state = {"last_image": name}
+    new_state = {"last_image": name, "last_view": "photo"}
     if isinstance(state.get("pinned_image"), str) and state["pinned_image"]:
         new_state["pinned_image"] = state["pinned_image"]
+    if isinstance(state.get("wisdom_offset"), int):
+        new_state["wisdom_offset"] = state["wisdom_offset"]
     write_json_atomic(state_path, new_state)
+
+
+def in_schedule_window(window_spec: str, now_dt: Optional[datetime] = None) -> bool:
+    """Return True if now_dt falls inside 'HH:MM-HH:MM' (supports overnight spans)."""
+    match = re.match(r"^\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*$", str(window_spec or ""))
+    if not match:
+        return False
+    sh, sm, eh, em = (int(g) for g in match.groups())
+    if not (0 <= sh < 24 and 0 <= sm < 60 and 0 <= eh < 24 and 0 <= em < 60):
+        return False
+    ref = now_dt or datetime.now()
+    cur = ref.hour * 60 + ref.minute
+    start = sh * 60 + sm
+    end = eh * 60 + em
+    if start <= end:
+        return start <= cur < end
+    return cur >= start or cur < end
+
+
+def should_show_dashboard(config, state, images_available: bool, cli_mode: Optional[str] = None, now_dt: Optional[datetime] = None) -> bool:
+    """Decide whether this refresh cycle should render the Weather + Wisdom dashboard."""
+    if cli_mode in ("photos", "dashboard"):
+        return cli_mode == "dashboard"
+
+    force_view = state.get("force_view")
+    if force_view == "dashboard":
+        return True
+    if force_view == "photo" or state.get("next_image") or state.get("pinned_image"):
+        return False
+
+    mode = cli_mode or config.get("dashboard", {}).get("mode", "photos")
+    if mode == "dashboard":
+        return True
+    if mode == "alternate":
+        if not images_available:
+            return True
+        return state.get("last_view") != "dashboard"
+    if mode == "schedule":
+        return in_schedule_window(config["dashboard"].get("schedule_hours", "06:30-10:00"), now_dt=now_dt)
+    return False
 
 
 def fit_photo(path):
@@ -1206,10 +1309,10 @@ def init_display():
     return display
 
 
-def show_frame(display, frame, config):
+def show_frame(display, frame, config, saturation_override=None):
     """Rotate a portrait frame to native size and send it to the panel."""
     native = rotate_for_display(frame, int(config["display"]["rotate"]))
-    saturation = float(config["display"]["saturation"])
+    saturation = float(config["display"]["saturation"]) if saturation_override is None else float(saturation_override)
     try:
         display.set_image(native, saturation=saturation)
     except TypeError:
@@ -1261,23 +1364,37 @@ def _save_latest_preview(state_dir, frame):
 
 
 def run_cycle(config, args, fonts, resolver, display):
-    """Choose, compose and display one frame."""
+    """Choose, compose and display either a photo or the Weather + Wisdom dashboard."""
+    from photoframe import dashboard as pfd
+
     images = list_images(config["_image_dir"])
     LOG.info("Found %d photo(s) in %s", len(images), config["_image_dir"])
     state_path = config["_state_dir"] / "state.json"
     state = read_frame_state(state_path)
-    photo = choose_next(
-        images,
-        last_name=state.get("last_image") if isinstance(state.get("last_image"), str) else None,
-        requested_name=state.get("next_image") if isinstance(state.get("next_image"), str) else None,
-        pinned_name=state.get("pinned_image") if isinstance(state.get("pinned_image"), str) else None,
-    )
+    cli_mode = getattr(args, "mode", None)
+    use_dashboard = should_show_dashboard(config, state, images_available=bool(images), cli_mode=cli_mode)
 
-    meta = PhotoMeta()
-    if photo is not None:
-        meta = build_photo_meta(photo, config, resolver)
     weather = get_weather(config, offline=args.offline)
-    frame = render_frame(photo, meta, weather, config, fonts)
+    photo = None
+    saturation_override = None
+
+    if use_dashboard:
+        offset = int(state.get("wisdom_offset") or 0)
+        wisdom = pfd.select_daily_wisdom(config, config["_state_dir"], offset=offset, offline=args.offline)
+        frame = pfd.render_dashboard_frame(weather, wisdom, config)
+        # Pure 6-colour palette quantization (saturation=0.0) eliminates dithering speckles on text/icons
+        saturation_override = 0.0
+    else:
+        photo = choose_next(
+            images,
+            last_name=state.get("last_image") if isinstance(state.get("last_image"), str) else None,
+            requested_name=state.get("next_image") if isinstance(state.get("next_image"), str) else None,
+            pinned_name=state.get("pinned_image") if isinstance(state.get("pinned_image"), str) else None,
+        )
+        meta = PhotoMeta()
+        if photo is not None:
+            meta = build_photo_meta(photo, config, resolver)
+        frame = render_frame(photo, meta, weather, config, fonts)
 
     if args.preview:
         output = Path(args.preview).expanduser()
@@ -1290,13 +1407,21 @@ def run_cycle(config, args, fonts, resolver, display):
 
     with suppress(OSError):
         _save_latest_preview(config["_state_dir"], frame)
-    show_frame(display, frame, config)
-    if photo is not None:
-        try:
-            write_last_image(state_path, photo.name)
-        except OSError as exc:
-            LOG.warning("Could not save state: %s", exc)
-    LOG.info("Displayed %s", photo.name if photo is not None else "(placeholder)")
+    show_frame(display, frame, config, saturation_override=saturation_override)
+
+    if use_dashboard:
+        new_state = {k: v for k, v in state.items() if k not in ("force_view", "next_image")}
+        new_state["last_view"] = "dashboard"
+        with suppress(OSError):
+            write_json_atomic(state_path, new_state)
+        LOG.info("Displayed Weather + Wisdom dashboard")
+    else:
+        if photo is not None:
+            try:
+                write_last_image(state_path, photo.name)
+            except OSError as exc:
+                LOG.warning("Could not save state: %s", exc)
+        LOG.info("Displayed %s", photo.name if photo is not None else "(placeholder)")
 
 
 def run(args):
@@ -1309,19 +1434,21 @@ def run(args):
     except OSError as exc:
         LOG.warning("Could not create image directory %s: %s", config["_image_dir"], exc)
 
-    fonts = load_fonts(config)
-    resolver = None
-    if config["metadata"].get("reverse_geocode", True):
-        resolver = PlaceResolver(config["_state_dir"], offline=args.offline)
-
     display = None if args.preview else init_display()
     stop_event = threading.Event()
     refresh_event = threading.Event()
     _install_signal_handlers(stop_event, refresh_event=refresh_event)
-    interval = float(config["refresh_minutes"]) * 60.0
 
     while not stop_event.is_set():
         refresh_event.clear()
+        # Reload config each cycle so Web Hub changes in config.local.json take effect immediately
+        config = load_config(args.config)
+        if args.image_dir:
+            config["_image_dir"] = Path(args.image_dir).expanduser().resolve()
+        fonts = load_fonts(config)
+        resolver = PlaceResolver(config["_state_dir"], offline=args.offline) if config["metadata"].get("reverse_geocode", True) else None
+        interval = float(config["refresh_minutes"]) * 60.0
+
         cycle_start = time.monotonic()
         try:
             run_cycle(config, args, fonts, resolver, display)
@@ -1345,6 +1472,11 @@ def build_parser():
         help="path to config.json (default: next to this script)",
     )
     parser.add_argument("--image-dir", help="override the configured photo directory")
+    parser.add_argument(
+        "--mode",
+        choices=["photos", "dashboard", "alternate", "schedule"],
+        help="override screen mode (e.g. --mode dashboard for Weather + Quote)",
+    )
     parser.add_argument("--preview", metavar="PATH", help="render one frame to a PNG and exit (no hardware)")
     parser.add_argument("--once", action="store_true", help="display one frame and exit")
     parser.add_argument("--offline", action="store_true", help="do not make network requests")

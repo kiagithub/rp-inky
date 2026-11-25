@@ -13,7 +13,9 @@ from typing import Any, Optional
 
 from PIL import Image, ImageOps
 
+from photoframe import dashboard as pfd
 from photoframe import photoframe as pf
+from vpn import manager as vm
 
 LOG = logging.getLogger("webui.photos")
 
@@ -211,21 +213,46 @@ def list_gallery(pf_config: dict[str, Any]) -> dict[str, Any]:
         "count": len(items),
         "current_image": state.get("last_image") or "",
         "pinned_image": state.get("pinned_image") or "",
+        "last_view": state.get("last_view") or "photo",
         "refresh_minutes": pf_config.get("refresh_minutes", 20),
         "weather_location": pf_config["weather"].get("location") or "",
+        "dashboard": pf_config.get("dashboard") or {},
         "photos": items,
     }
 
 
-def render_live_preview_png(pf_config: dict[str, Any], photo_name: Optional[str] = None) -> bytes:
-    """Return PNG bytes for the live e-ink frame preview (cached or rendered offline)."""
+def render_live_preview_png(
+    pf_config: dict[str, Any],
+    photo_name: Optional[str] = None,
+    view: Optional[str] = None,
+) -> bytes:
+    """Return PNG bytes for the live e-ink frame preview (photo or Weather+Quote card)."""
     state_dir: Path = pf_config["_state_dir"]
+    state = pf.read_frame_state(state_dir / "state.json")
+
+    if view == "dashboard":
+        weather = pf.get_weather(pf_config, offline=False)
+        offset = int(state.get("wisdom_offset") or 0)
+        wisdom = pfd.select_daily_wisdom(pf_config, state_dir, offset=offset, offline=True)
+        frame = pfd.render_dashboard_frame(weather, wisdom, pf_config)
+        buf = io.BytesIO()
+        frame.save(buf, "PNG")
+        return buf.getvalue()
+
     cached_preview = state_dir / "latest_preview.png"
     if not photo_name and cached_preview.is_file():
         return cached_preview.read_bytes()
 
     images = pf.list_images(pf_config["_image_dir"])
-    state = pf.read_frame_state(state_dir / "state.json")
+    if not photo_name and pf.should_show_dashboard(pf_config, state, images_available=bool(images)):
+        weather = pf.get_weather(pf_config, offline=True)
+        offset = int(state.get("wisdom_offset") or 0)
+        wisdom = pfd.select_daily_wisdom(pf_config, state_dir, offset=offset, offline=True)
+        frame = pfd.render_dashboard_frame(weather, wisdom, pf_config)
+        buf = io.BytesIO()
+        frame.save(buf, "PNG")
+        return buf.getvalue()
+
     chosen = None
     if photo_name:
         clean = validate_photo_name(photo_name)
@@ -256,7 +283,7 @@ def trigger_frame_action(
     action: str = "next",
     photo_name: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Queue a photo/pin state change and signal inky-photoframe to refresh immediately."""
+    """Queue a photo/dashboard/pin state change and signal inky-photoframe to refresh."""
     state_path = pf_config["_state_dir"] / "state.json"
     state = pf.read_frame_state(state_path)
 
@@ -265,17 +292,29 @@ def trigger_frame_action(
         if not (pf_config["_image_dir"] / clean).is_file():
             raise FileNotFoundError(f"Photo not found: {clean}")
         state["next_image"] = clean
+        state["force_view"] = "photo"
     elif action == "pin" and photo_name:
         clean = validate_photo_name(photo_name)
         if not (pf_config["_image_dir"] / clean).is_file():
             raise FileNotFoundError(f"Photo not found: {clean}")
         state["pinned_image"] = clean
         state["next_image"] = clean
+        state["force_view"] = "photo"
     elif action == "unpin":
         state.pop("pinned_image", None)
     elif action == "next":
         state.pop("pinned_image", None)
         state.pop("next_image", None)
+        state["force_view"] = "photo"
+    elif action == "dashboard":
+        state.pop("pinned_image", None)
+        state.pop("next_image", None)
+        state["force_view"] = "dashboard"
+    elif action == "shuffle_wisdom":
+        state.pop("pinned_image", None)
+        state.pop("next_image", None)
+        state["wisdom_offset"] = int(state.get("wisdom_offset") or 0) + 1
+        state["force_view"] = "dashboard"
     else:
         raise ValueError(f"Unsupported frame action: {action}")
 
@@ -285,7 +324,41 @@ def trigger_frame_action(
         "signaled": signaled,
         "pinned_image": state.get("pinned_image") or "",
         "next_image": state.get("next_image") or "",
+        "force_view": state.get("force_view") or "",
     }
+
+
+def update_dashboard_settings(pf_config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Persist screen mode, schedule & quote/fact preferences in photoframe/config.local.json."""
+    patch: dict[str, Any] = {}
+    if "mode" in payload:
+        mode = str(payload["mode"]).strip().lower()
+        if mode not in ("photos", "dashboard", "alternate", "schedule"):
+            raise ValueError(f"Invalid mode: {mode}")
+        patch["mode"] = mode
+    if "schedule_hours" in payload:
+        sched = str(payload["schedule_hours"]).strip()
+        if sched and not re.match(r"^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}$", sched):
+            raise ValueError("Schedule hours must look like '06:30-10:00'.")
+        patch["schedule_hours"] = sched or "06:30-10:00"
+    if "content" in payload:
+        content = str(payload["content"]).strip().lower()
+        if content in ("both", "facts", "quotes"):
+            patch["content"] = content
+    if "use_24h" in payload:
+        patch["use_24h"] = bool(payload["use_24h"])
+    if "online_wisdom" in payload:
+        patch["online_wisdom"] = bool(payload["online_wisdom"])
+    if "custom_text" in payload:
+        patch["custom_text"] = str(payload["custom_text"]).strip()[:200]
+    if "custom_source" in payload:
+        patch["custom_source"] = str(payload["custom_source"]).strip()[:48]
+
+    vm.update_local_config(pf_config["_config_path"], {"dashboard": patch})
+    reloaded = pf.load_config(pf_config["_config_path"])
+    if payload.get("refresh_now", True):
+        _signal_photoframe_process()
+    return reloaded["dashboard"]
 
 
 def _signal_photoframe_process() -> bool:

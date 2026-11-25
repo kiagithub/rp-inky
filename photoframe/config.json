@@ -35,5 +35,15 @@
     "units": "metric",
     "retries": 3,
     "retry_delay_seconds": 10
+  },
+  "dashboard": {
+    "mode": "alternate",
+    "schedule_hours": "06:30-10:00",
+    "step_hours": 3,
+    "use_24h": false,
+    "content": "both",
+    "online_wisdom": false,
+    "custom_text": "",
+    "custom_source": ""
   }
 }

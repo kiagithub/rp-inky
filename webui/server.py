@@ -296,7 +296,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_bytes(file_path.read_bytes(), ctype or "image/jpeg", cache_control="public, max-age=60")
             elif path == "/api/frame/preview":
                 photo_param = (query.get("photo") or [""])[0] or None
-                png_bytes = wp.render_live_preview_png(self.ctx.get_pf_config(), photo_name=photo_param)
+                view_param = (query.get("view") or [""])[0] or None
+                png_bytes = wp.render_live_preview_png(self.ctx.get_pf_config(), photo_name=photo_param, view=view_param)
                 self._send_bytes(png_bytes, "image/png", cache_control="no-store")
             elif path == "/api/vpn/status":
                 refresh = (query.get("refresh") or [""])[0] == "1"
@@ -377,6 +378,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     photo_name=body_json.get("name"),
                 )
                 self._send_json(result)
+
+            elif path == "/api/frame/dashboard":
+                body_json = self._read_json_body()
+                updated = wp.update_dashboard_settings(self.ctx.get_pf_config(), body_json)
+                self._send_json({"dashboard": updated})
 
             elif path == "/api/vpn/switch":
                 body_json = self._read_json_body()

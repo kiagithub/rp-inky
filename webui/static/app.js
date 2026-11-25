@@ -61,9 +61,11 @@
   });
 
   // -------------------- Tab 1: Photos & Cropper --------------------
-  function refreshPreviewImage(photoName = "") {
-    const q = photoName ? `?photo=${encodeURIComponent(photoName)}&t=${Date.now()}` : `?t=${Date.now()}`;
-    $("#frame-preview-img").src = `/api/frame/preview${q}`;
+  function refreshPreviewImage(photoName = "", view = "") {
+    const params = new URLSearchParams({ t: String(Date.now()) });
+    if (photoName) params.set("photo", photoName);
+    if (view) params.set("view", view);
+    $("#frame-preview-img").src = `/api/frame/preview?${params.toString()}`;
   }
 
   const photoInput = $("#photo-input");
@@ -136,14 +138,26 @@
   async function loadGallery() {
     const data = await api("/api/photos");
     $("#album-count").textContent = data.count;
+    const dash = data.dashboard || {};
+    if (dash.mode) {
+      $("#dash-mode").value = dash.mode;
+      $("#dash-sched-wrap").classList.toggle("hidden", dash.mode !== "schedule");
+    }
+    if (dash.schedule_hours) $("#dash-sched").value = dash.schedule_hours;
+    if (dash.content) $("#dash-content").value = dash.content;
+    if (dash.custom_text !== undefined) $("#dash-custom").value = dash.custom_text || "";
+
     const unpinBtn = $("#btn-unpin-photo");
     if (data.pinned_image) {
       unpinBtn.classList.remove("hidden");
       $("#frame-caption").textContent = `Pinned: ${data.pinned_image}`;
+    } else if (data.last_view === "dashboard") {
+      unpinBtn.classList.add("hidden");
+      $("#frame-caption").textContent = `Showing: Weather & Daily Wisdom (mode: ${dash.mode || "alternate"})`;
     } else {
       unpinBtn.classList.add("hidden");
       $("#frame-caption").textContent = data.current_image
-        ? `Showing: ${data.current_image} (rotates every ${data.refresh_minutes}m)`
+        ? `Showing: ${data.current_image} (mode: ${dash.mode || "photos"}, ${data.refresh_minutes}m)`
         : "No photo displayed yet";
     }
 
@@ -205,6 +219,46 @@
     refreshPreviewImage(name);
     setTimeout(loadGallery, 1200);
   }
+
+  $("#btn-show-dash").addEventListener("click", async () => {
+    await api("/api/frame/action", { method: "POST", json: { action: "dashboard" } });
+    showToast("Displaying Hourly Weather + Daily Wisdom on e-ink screen!");
+    refreshPreviewImage("", "dashboard");
+    setTimeout(loadGallery, 1200);
+  });
+
+  $("#btn-shuffle-wisdom").addEventListener("click", async () => {
+    await api("/api/frame/action", { method: "POST", json: { action: "shuffle_wisdom" } });
+    showToast("Picked a new Fun Fact / Quote and refreshing screen!");
+    refreshPreviewImage("", "dashboard");
+    setTimeout(loadGallery, 1200);
+  });
+
+  $("#dash-mode").addEventListener("change", () => {
+    $("#dash-sched-wrap").classList.toggle("hidden", $("#dash-mode").value !== "schedule");
+  });
+
+  $("#dash-mode-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const mode = $("#dash-mode").value;
+      await api("/api/frame/dashboard", {
+        method: "POST",
+        json: {
+          mode,
+          schedule_hours: $("#dash-sched").value.trim(),
+          content: $("#dash-content").value,
+          custom_text: $("#dash-custom").value.trim(),
+          refresh_now: true,
+        },
+      });
+      showToast(`Saved mode '${mode}' and signaled e-ink refresh!`);
+      if (mode === "dashboard") refreshPreviewImage("", "dashboard");
+      setTimeout(loadGallery, 1200);
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
 
   $("#btn-next-photo").addEventListener("click", async () => {
     await api("/api/frame/action", { method: "POST", json: { action: "next" } });

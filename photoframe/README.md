@@ -104,6 +104,10 @@ Other useful settings:
 | `metadata.show_unknown` | `false` | Show "Location unknown" / "Date unknown". |
 | `metadata.sidecar` | `image/metadata.json` | Optional per-photo overrides. |
 | `weather.admin1` | `Virginia` | State/region for ambiguous city names. |
+| `dashboard.mode` | `alternate` | `alternate` (Photo ↔ Weather/Quote), `dashboard` (Weather/Quote 24/7), `schedule`, or `photos`. |
+| `dashboard.schedule_hours` | `06:30-10:00` | Active window when `dashboard.mode` is `schedule`. |
+| `dashboard.content` | `both` | `both`, `facts` (Fun Facts only), or `quotes` (Quotes only). |
+| `dashboard.step_hours` | `3` | Hours between each of the 4 forecast columns. |
 
 Paths in the config are resolved relative to `config.json`.
 
