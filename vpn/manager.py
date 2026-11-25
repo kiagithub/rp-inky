@@ -1316,8 +1316,27 @@ def ensure_policy_routing_base(config: dict[str, Any]) -> None:
         run_cmd(["ip", "-4", "rule", "add", "iif", config["wan_interface"], "lookup", table, "priority", str(RULE_PRIO_LAN_GW)], check=False)
 
 
+def cleanup_legacy_wg_quick_artifacts() -> None:
+    """Remove stale nftables kill-switch tables and ip rules left behind by wg-quick@wg0."""
+    tables_res = run_cmd(["nft", "list", "tables"], check=False)
+    if tables_res.returncode == 0:
+        for line in tables_res.stdout.splitlines():
+            # Example line: 'table ip wg-quick-wg0' or 'table inet wg-quick-wg0'
+            parts = line.strip().split()
+            if len(parts) == 3 and parts[0] == "table" and parts[2].startswith("wg-quick-"):
+                LOG.warning("Removing leftover nftables %s %s (blocks tunnel replies!)", parts[1], parts[2])
+                run_cmd(["nft", "delete", "table", parts[1], parts[2]], check=False)
+    for _ in range(5):
+        if run_cmd(["ip", "-4", "rule", "del", "lookup", "51820"], check=False).returncode != 0:
+            break
+    for _ in range(5):
+        if run_cmd(["ip", "-4", "rule", "del", "table", "main", "suppress_prefixlength", "0"], check=False).returncode != 0:
+            break
+
+
 def apply_nftables(config: dict[str, Any], dns_servers: Optional[list[str]] = None) -> None:
     """Atomically load the rp_vpn nftables kill-switch and NAT rules."""
+    cleanup_legacy_wg_quick_artifacts()
     wan_ip = get_interface_ipv4(config["wan_interface"])
     ruleset = build_nftables_ruleset(config, dns_servers=dns_servers, wan_ipv4=wan_ip)
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)

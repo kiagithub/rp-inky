@@ -116,7 +116,10 @@ sudo rm -f /etc/systemd/system/hotspot-ip.service /etc/systemd/system/hotspot-fi
     /etc/systemd/system/multi-user.target.wants/wg-quick@wg0.service
 sudo wg-quick down wg0 >/dev/null 2>&1 || true
 sudo ip link del dev wg0 >/dev/null 2>&1 || true
+sudo nft delete table ip wg-quick-wg0 >/dev/null 2>&1 || true
+sudo nft delete table inet wg-quick-wg0 >/dev/null 2>&1 || true
 while sudo ip -4 rule del lookup 51820 >/dev/null 2>&1; do :; done
+while sudo ip -4 rule del table main suppress_prefixlength 0 >/dev/null 2>&1; do :; done
 sudo ip -4 route flush table 51820 >/dev/null 2>&1 || true
 
 # Always clear any legacy iptables FORWARD DROP / NAT rules left by old hotspot-firewall
