@@ -21,41 +21,55 @@ GREEN = (0, 255, 0)
 WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 MONTHS_UPPER = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 
-# Curated, concise (<= 145 chars) fun facts & quotes sized for 26-32px bold type at 2-3 yards.
-# Pure ASCII punctuation avoids missing-glyph tofu boxes on fallback fonts.
+SERIF_BOLD_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
+    "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf",
+]
+SERIF_REGULAR_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+    "/System/Library/Fonts/Supplemental/Georgia.ttf",
+    "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+]
+
+# Curated fun facts & quotes (pure ASCII punctuation avoids missing-glyph boxes on fallback fonts).
 CURATED_WISDOM: list[dict[str, str]] = [
-    {"kind": "fact", "text": "Honey never spoils - sealed jars found in 3,000-year-old Egyptian tombs are still edible.", "source": "Archaeology"},
-    {"kind": "quote", "text": "Simplicity is the ultimate sophistication.", "source": "Leonardo da Vinci"},
-    {"kind": "fact", "text": "Octopuses have three hearts, blue copper-based blood, and nine brains - one in each arm.", "source": "Marine Biology"},
+    {"kind": "fact", "text": "Honey never spoils - archaeologists have found 3,000-year-old sealed jars of honey in Egyptian tombs that are still completely edible today.", "source": "Archaeology"},
+    {"kind": "quote", "text": "Simplicity is the ultimate sophistication. When you strip away everything unnecessary, what remains speaks with clarity.", "source": "Leonardo da Vinci"},
+    {"kind": "fact", "text": "Octopuses have three hearts, blue copper-based blood, and nine brains - one central brain plus a mini-brain controlling each arm.", "source": "Marine Biology"},
     {"kind": "quote", "text": "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", "source": "Will Durant"},
-    {"kind": "fact", "text": "A day on Venus is longer than a year on Venus - it takes 243 Earth days just to rotate once.", "source": "Astronomy"},
-    {"kind": "quote", "text": "In the middle of difficulty lies opportunity.", "source": "Albert Einstein"},
-    {"kind": "fact", "text": "Bananas are botanically berries, while strawberries and raspberries are not berries at all.", "source": "Botany"},
-    {"kind": "quote", "text": "The best time to plant a tree was twenty years ago. The second best time is now.", "source": "Proverb"},
-    {"kind": "fact", "text": "There are more trees on Earth - over three trillion - than stars in the Milky Way galaxy.", "source": "Nature Journal"},
-    {"kind": "quote", "text": "Well done is better than well said.", "source": "Benjamin Franklin"},
-    {"kind": "fact", "text": "Sharks existed on Earth for roughly 50 million years before the very first trees evolved.", "source": "Paleontology"},
-    {"kind": "quote", "text": "Do what you can, with what you have, where you are.", "source": "Theodore Roosevelt"},
-    {"kind": "fact", "text": "Light from the Sun takes 8 minutes and 20 seconds to travel across space and reach your eyes.", "source": "Physics"},
-    {"kind": "quote", "text": "Not all those who wander are lost.", "source": "J.R.R. Tolkien"},
-    {"kind": "fact", "text": "Oxford University is older than the Aztec Empire - teaching began there as early as 1096.", "source": "History"},
-    {"kind": "quote", "text": "Everything you can imagine is real.", "source": "Pablo Picasso"},
-    {"kind": "fact", "text": "Wombats are the only known animals in the world that produce cube-shaped droppings.", "source": "Zoology"},
-    {"kind": "quote", "text": "Stay hungry, stay foolish.", "source": "Whole Earth Catalog"},
-    {"kind": "fact", "text": "Sea otters hold hands while sleeping on the water so they do not drift apart in the current.", "source": "Wildlife"},
-    {"kind": "quote", "text": "Fortune favors the prepared mind.", "source": "Louis Pasteur"},
-    {"kind": "fact", "text": "The Eiffel Tower grows up to 15 cm taller in summer as heat expands its iron frame.", "source": "Engineering"},
+    {"kind": "fact", "text": "A single day on Venus is longer than a full year on Venus - it takes 243 Earth days to rotate once, but only 225 days to orbit the Sun.", "source": "Astronomy"},
+    {"kind": "quote", "text": "In the middle of every difficulty lies opportunity. The impediment to action advances action; what stands in the way becomes the way.", "source": "Marcus Aurelius & Einstein"},
+    {"kind": "fact", "text": "Bananas and kiwis are botanically berries, while strawberries, blackberries, and raspberries are not berries at all.", "source": "Botany"},
+    {"kind": "quote", "text": "The best time to plant a tree was twenty years ago. The second best time is today.", "source": "Proverb"},
+    {"kind": "fact", "text": "There are far more trees on Earth - over three trillion - than there are stars in the entire Milky Way galaxy.", "source": "Nature Journal"},
+    {"kind": "quote", "text": "Tell me, what is it you plan to do with your one wild and precious life?", "source": "Mary Oliver"},
+    {"kind": "fact", "text": "Sharks have swum in Earth's oceans for over 400 million years - roughly 50 million years longer than trees have existed on land.", "source": "Paleontology"},
+    {"kind": "quote", "text": "Do what you can, with what you have, where you are - small consistent steps outlast grand plans that never begin.", "source": "Theodore Roosevelt"},
+    {"kind": "fact", "text": "Sunlight takes 8 minutes and 20 seconds to cross space to your eyes, yet a photon takes over 100,000 years to escape the Sun's core.", "source": "Physics"},
+    {"kind": "quote", "text": "Not all those who wander are lost; all that is gold does not glitter.", "source": "J.R.R. Tolkien"},
+    {"kind": "fact", "text": "Oxford University is older than the Aztec Empire - scholars began teaching at Oxford in 1096, over 300 years before Tenochtitlan peaked.", "source": "History"},
+    {"kind": "quote", "text": "You cannot cross the sea merely by standing and staring at the water.", "source": "Rabindranath Tagore"},
+    {"kind": "fact", "text": "Wombats are the only known animals in the world that produce cube-shaped droppings, which keeps them from rolling off rocks.", "source": "Zoology"},
+    {"kind": "quote", "text": "Stay hungry, stay foolish - keep looking until you find work that truly excites you.", "source": "Whole Earth Catalog"},
+    {"kind": "fact", "text": "Sea otters hold hands while sleeping on their backs in the water so ocean currents do not pull them apart overnight.", "source": "Wildlife"},
+    {"kind": "quote", "text": "Chance favors only the prepared mind.", "source": "Louis Pasteur"},
+    {"kind": "fact", "text": "Thermal expansion causes the iron lattice of the Eiffel Tower to grow up to 15 centimeters taller on hot summer days.", "source": "Engineering"},
     {"kind": "quote", "text": "Knowledge speaks, but wisdom listens.", "source": "Jimi Hendrix"},
-    {"kind": "fact", "text": "A bolt of lightning is five times hotter than the surface of the Sun - nearly 30,000°C.", "source": "Meteorology"},
+    {"kind": "fact", "text": "A bolt of lightning heats the surrounding air to nearly 30,000°C - roughly five times hotter than the surface of the Sun.", "source": "Meteorology"},
     {"kind": "quote", "text": "It always seems impossible until it is done.", "source": "Nelson Mandela"},
-    {"kind": "fact", "text": "Cleopatra lived closer in time to the Apollo Moon landing than to the Great Pyramid's construction.", "source": "History"},
-    {"kind": "quote", "text": "Make things as simple as possible, but no simpler.", "source": "Albert Einstein"},
-    {"kind": "fact", "text": "Crows can recognize individual human faces and hold grudges - or gratitude - for years.", "source": "Ornithology"},
-    {"kind": "quote", "text": "Action is the foundational key to all success.", "source": "Pablo Picasso"},
-    {"kind": "fact", "text": "Neutron stars are so dense that a single teaspoon of their matter weighs about a billion tons.", "source": "Astrophysics"},
+    {"kind": "fact", "text": "Cleopatra lived closer in time to the 1969 Moon landing than to the construction of the Great Pyramid of Giza.", "source": "History"},
+    {"kind": "quote", "text": "Everything should be made as simple as possible, but not simpler.", "source": "Albert Einstein"},
+    {"kind": "fact", "text": "Crows remember individual human faces for years and can even teach their young which people are kind or unfriendly.", "source": "Ornithology"},
+    {"kind": "quote", "text": "The secret of getting ahead is getting started; the secret of getting started is breaking complex tasks into small first steps.", "source": "Mark Twain"},
+    {"kind": "fact", "text": "Neutron stars are so unimaginably dense that a single teaspoon of their matter would weigh roughly a billion tons on Earth.", "source": "Astrophysics"},
     {"kind": "quote", "text": "Courage is grace under pressure.", "source": "Ernest Hemingway"},
-    {"kind": "fact", "text": "Scotland chose the unicorn as its official national animal back in the late 14th century.", "source": "History"},
-    {"kind": "quote", "text": "What you do today can improve all your tomorrows.", "source": "Ralph Marston"},
+    {"kind": "fact", "text": "Scotland chose the unicorn as its official national animal in the late 14th century as a symbol of purity and untamable spirit.", "source": "History"},
+    {"kind": "quote", "text": "Happiness is not something ready made. It comes from your own actions.", "source": "Dalai Lama"},
 ]
 
 
@@ -103,7 +117,7 @@ def select_daily_wisdom(
     if custom_text:
         return {
             "kind": str(dash_cfg.get("custom_kind") or "note"),
-            "text": custom_text[:200],
+            "text": custom_text[:300],
             "source": str(dash_cfg.get("custom_source") or "").strip()[:48],
         }
 
@@ -161,7 +175,7 @@ def _fetch_or_load_online_wisdom(state_dir: Path, ref_day: date, content_filter:
             with urllib.request.urlopen(req, timeout=6) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             text = str(data.get("text") or "").strip()
-            if 20 <= len(text) <= 155:
+            if 20 <= len(text) <= 240:
                 entry = {"kind": "fact", "text": text, "source": "Daily Fact"}
                 pf.write_json_atomic(cache_path, {"key": day_key, "entry": entry})
                 return entry
@@ -175,7 +189,7 @@ def _fetch_or_load_online_wisdom(state_dir: Path, ref_day: date, content_filter:
             if isinstance(data, list) and data:
                 q = str(data[0].get("q") or "").strip()
                 a = str(data[0].get("a") or "").strip()
-                if 15 <= len(q) <= 155:
+                if 15 <= len(q) <= 240:
                     entry = {"kind": "quote", "text": q, "source": a[:40]}
                     pf.write_json_atomic(cache_path, {"key": day_key, "entry": entry})
                     return entry
@@ -433,6 +447,56 @@ def paste_multicolor_weather_icon(
         _cloud(s * 0.14, s * 0.24, s * 0.72)
 
 
+def paste_quote_mark(canvas: Image.Image, xy: tuple[int, int], size: int, fill: tuple[int, int, int]) -> None:
+    """Draw a classic vector double-opening quotation mark (two crisp comma-drops)."""
+    s = max(20, int(size))
+
+    def _draw(d: ImageDraw.ImageDraw) -> None:
+        r = s * 0.19
+        for offset_x in (s * 0.22, s * 0.68):
+            cy = s * 0.66
+            # Lower circular bulb
+            d.ellipse([offset_x - r, cy - r, offset_x + r, cy + r], fill=255)
+            # Sweeping upper tail curving right
+            d.polygon(
+                [
+                    (offset_x - r * 0.95, cy - r * 0.10),
+                    (offset_x - r * 0.55, s * 0.22),
+                    (offset_x + r * 0.70, s * 0.08),
+                    (offset_x + r * 0.92, s * 0.22),
+                    (offset_x + r * 0.10, s * 0.36),
+                    (offset_x + r * 0.45, cy - r * 0.20),
+                ],
+                fill=255,
+            )
+
+    canvas.paste(fill, xy, _hard_mask((s, s), _draw))
+
+
+def paste_spark_icon(canvas: Image.Image, xy: tuple[int, int], size: int, fill: tuple[int, int, int]) -> None:
+    """Draw a crisp 4-point editorial diamond star for Fun Facts / Notes."""
+    s = max(18, int(size))
+    c = s * 0.5
+    inner = s * 0.14
+
+    def _draw(d: ImageDraw.ImageDraw) -> None:
+        d.polygon(
+            [
+                (c, s * 0.04),
+                (c + inner, c - inner),
+                (s * 0.96, c),
+                (c + inner, c + inner),
+                (c, s * 0.96),
+                (c - inner, c + inner),
+                (s * 0.04, c),
+                (c - inner, c - inner),
+            ],
+            fill=255,
+        )
+
+    canvas.paste(fill, xy, _hard_mask((s, s), _draw))
+
+
 def wrap_text_lines(text: str, font: Any, max_width: int, text_width_fn: Any) -> list[str]:
     """Greedy word-wrap text so every line fits within max_width."""
     words = text.split()
@@ -473,8 +537,6 @@ def render_dashboard_frame(
     f_col_hour = pf._load_font(bold_path, 26)
     f_col_temp = pf._load_font(bold_path, 38)
     f_col_rain = pf._load_font(bold_path, 26)
-    f_badge = pf._load_font(bold_path, 19)
-    f_source = pf._load_font(bold_path, 21)
 
     ref_dt = now or datetime.now()
     unit = "°F" if config["weather"].get("units") == "imperial" else "°C"
@@ -576,42 +638,61 @@ def render_dashboard_frame(
             paste_raindrop(canvas, (gx, 462), drop_sz, drop_col)
             pf.paste_text(canvas, (gx + drop_sz + 5, 461), r_txt, f_col_rain, r_col)
 
-    # Thick divider above Daily Wisdom card
-    draw.rectangle((16, 530, WIDTH - 16, 533), fill=BLACK)
-
-    # 4. Daily Fun Fact / Quote Card (536..800)
+    # Ornamental editorial divider above Daily Wisdom card (y = 528)
     kind = str(wisdom.get("kind") or "quote").lower()
-    badge_text = "DID YOU KNOW?" if kind == "fact" else ("DAILY NOTE" if kind == "note" else "QUOTE OF THE DAY")
-    bw = pf.text_width(f_badge, badge_text) + 24
-    bh_text = pf.text_metrics(f_badge, badge_text)[1]
-    draw.rectangle((22, 548, 22 + bw, 584), fill=YELLOW, outline=BLACK, width=2)
-    pf.paste_text(canvas, (34, 548 + max(2, (36 - bh_text) // 2)), badge_text, f_badge, BLACK)
+    accent_color = RED if kind == "quote" else BLUE
+    div_y = 528
+    mid_x = WIDTH // 2
+    draw.line([(24, div_y), (mid_x - 22, div_y)], fill=BLACK, width=2)
+    draw.line([(mid_x + 22, div_y), (WIDTH - 24, div_y)], fill=BLACK, width=2)
+    draw.polygon(
+        [(mid_x, div_y - 8), (mid_x + 9, div_y), (mid_x, div_y + 8), (mid_x - 9, div_y)],
+        fill=accent_color,
+        outline=BLACK,
+    )
+
+    # 4. Editorial Daily Quote / Fun Fact Card (542..786) — no yellow box, classic Serif typography
+    serif_bold_path = pf._first_existing([*SERIF_BOLD_CANDIDATES, bold_path])
+    serif_reg_path = pf._first_existing([*SERIF_REGULAR_CANDIDATES, serif_bold_path, bold_path])
+
+    f_kicker = pf._load_font(bold_path, 15)
+    f_attr = pf._load_font(serif_bold_path, 19)
+
+    kicker = "DID YOU KNOW" if kind == "fact" else ("DAILY NOTE" if kind == "note" else "QUOTE OF THE DAY")
+    icon_x, icon_y = 26, 544
+    if kind == "quote":
+        paste_quote_mark(canvas, (icon_x, icon_y), 34, accent_color)
+    else:
+        paste_spark_icon(canvas, (icon_x, icon_y + 2), 30, accent_color)
+    pf.paste_text(canvas, (icon_x + 42, icon_y + 10), kicker, f_kicker, accent_color)
 
     raw_body = clean_display_text(str(wisdom.get("text") or "").strip()).strip('"')
-    body_text = f'"{raw_body}"' if kind == "quote" and raw_body else raw_body
+    body_text = raw_body
     source_text = clean_display_text(str(wisdom.get("source") or "").strip())
 
-    max_text_w = WIDTH - 48
-    avail_bottom = 750 if source_text else 784
-    avail_top = 598
+    # Left vertical accent bar aligns cleanly beside the wrapped quote body
+    text_left = 44
+    max_text_w = WIDTH - text_left - 24
+    avail_top = 588
+    avail_bottom = 746 if source_text else 778
     avail_h = avail_bottom - avail_top
 
-    chosen_font = pf._load_font(bold_path, 24)
+    chosen_font = pf._load_font(serif_reg_path, 22)
     wrapped_lines: list[str] = []
-    line_step = 30
+    line_step = 28
 
-    # Auto-pick the largest bold font size (32 -> 28 -> 25 -> 22) that fits cleanly without clipping
-    for pt in (32, 29, 26, 23):
-        candidate_font = pf._load_font(bold_path, pt)
+    # Refined serif scale (25 -> 23 -> 21 -> 19 -> 17) fits both short and longer quotes gracefully
+    for pt in (25, 23, 21, 19, 17):
+        candidate_font = pf._load_font(serif_bold_path if pt >= 21 else serif_reg_path, pt)
         lines = wrap_text_lines(body_text, candidate_font, max_text_w, pf.text_width)
-        lh = pf.text_metrics(candidate_font, "Ay")[1] + 7
+        lh = pf.text_metrics(candidate_font, "Ay")[1] + 8
         if len(lines) * lh <= avail_h:
             chosen_font = candidate_font
             wrapped_lines = lines
             line_step = lh
             break
     else:
-        chosen_font = pf._load_font(bold_path, 22)
+        chosen_font = pf._load_font(serif_reg_path, 16)
         lh = pf.text_metrics(chosen_font, "Ay")[1] + 6
         max_lines = max(2, avail_h // lh)
         all_lines = wrap_text_lines(body_text, chosen_font, max_text_w, pf.text_width)
@@ -625,13 +706,19 @@ def render_dashboard_frame(
 
     total_block_h = len(wrapped_lines) * line_step
     start_y = avail_top + max(0, (avail_h - total_block_h) // 2)
+    bar_top = start_y + 2
+    bar_bottom = max(bar_top + 20, start_y + total_block_h - 6)
+    draw.rectangle((28, bar_top, 32, bar_bottom), fill=accent_color)
+
     for idx, line in enumerate(wrapped_lines):
-        pf.paste_text(canvas, (24, start_y + idx * line_step), line, chosen_font, BLACK)
+        pf.paste_text(canvas, (text_left, start_y + idx * line_step), line, chosen_font, BLACK)
 
     if source_text:
-        attr = f"- {source_text}"
-        attr_trunc = pf.truncate_text(attr, f_source, WIDTH - 48)
-        aw = pf.text_width(f_source, attr_trunc)
-        pf.paste_text(canvas, (WIDTH - 24 - aw, 758), attr_trunc, f_source, BLUE if kind == "fact" else BLACK)
+        attr_trunc = pf.truncate_text(source_text, f_attr, WIDTH - 84)
+        aw = pf.text_width(f_attr, attr_trunc)
+        attr_x = WIDTH - 26 - aw
+        attr_y = 758
+        draw.line([(attr_x - 36, attr_y + 10), (attr_x - 10, attr_y + 10)], fill=accent_color, width=2)
+        pf.paste_text(canvas, (attr_x, attr_y), attr_trunc, f_attr, BLACK)
 
     return canvas

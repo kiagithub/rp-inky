@@ -416,7 +416,7 @@ def update_dashboard_settings(pf_config: dict[str, Any], payload: dict[str, Any]
     if "online_wisdom" in payload:
         patch["online_wisdom"] = bool(payload["online_wisdom"])
     if "custom_text" in payload:
-        patch["custom_text"] = str(payload["custom_text"]).strip()[:200]
+        patch["custom_text"] = str(payload["custom_text"]).strip()[:300]
     if "custom_source" in payload:
         patch["custom_source"] = str(payload["custom_source"]).strip()[:48]
 
