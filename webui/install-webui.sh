@@ -60,9 +60,9 @@ if [ ! -x "$PYTHON" ]; then
     "$PYTHON" -m pip install --upgrade pip pillow
 fi
 
-# Ensure DejaVu TrueType fonts are installed for crisp bold e-ink typography
-if [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf ]; then
-    sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core || true
+# Ensure DejaVu TrueType fonts + mDNS/OUI databases are installed
+if [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf ] || ! command -v avahi-browse >/dev/null 2>&1 || [ ! -f /usr/share/ieee-data/oui.txt ]; then
+    sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core avahi-utils ieee-data || true
 fi
 
 # Ensure Pillow (and optional pillow-heif for iPhone HEIC uploads) are available

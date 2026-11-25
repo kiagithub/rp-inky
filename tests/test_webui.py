@@ -8,6 +8,7 @@ from PIL import Image, TiffImagePlugin
 
 from photoframe import photoframe as pf
 from webui import monitor as wm
+from webui import network as wn
 from webui import photos as wp
 from webui import server as ws
 
@@ -266,4 +267,128 @@ def test_frame_actions_update_preview_and_shuffle_wisdom_immediately(tmp_path, m
     wp.trigger_frame_action(after_shuffle, action="shuffle_wisdom")
     preview_dash_2 = preview_path.read_bytes()
     assert preview_dash_2 != preview_dash_1
+
+
+def test_network_parsers_oui_and_category_inference(tmp_path):
+    iw_raw = """Station aa:bb:cc:dd:ee:01 (on wlan0)
+\tinactive time:\t120 ms
+\trx bytes:\t2000000
+\ttx bytes:\t15000000
+\tsignal:\t\t-54 dBm
+\ttx bitrate:\t433.3 MBit/s VHT-MCS 9 80MHz
+\tconnected time:\t3660 seconds
+"""
+    stations = wn.parse_iw_station_dump(iw_raw)
+    assert "AA:BB:CC:DD:EE:01" in stations
+    assert stations["AA:BB:CC:DD:EE:01"]["tx_bytes"] == 15000000
+    assert stations["AA:BB:CC:DD:EE:01"]["rx_bytes"] == 2000000
+    assert stations["AA:BB:CC:DD:EE:01"]["signal_dbm"] == -54
+    assert stations["AA:BB:CC:DD:EE:01"]["connected_seconds"] == 3660
+
+    lease_file = tmp_path / "dnsmasq.leases"
+    lease_file.write_text("1799999999 aa:bb:cc:dd:ee:01 10.66.0.25 Kia-iPhone *\n", encoding="utf-8")
+    leases = wn.parse_dnsmasq_leases((lease_file,))
+    assert leases["AA:BB:CC:DD:EE:01"] == {"ip": "10.66.0.25", "hostname": "Kia-iPhone"}
+
+    avahi_raw = (
+        "=;eth0;IPv4;Living\\032Room\\032TV;_airplay._tcp;local;LGwebOSTV.local;192.168.86.44;7000;\n"
+        "=;eth0;IPv4;Desk\\032Plug;_hap._tcp;local;kasa-plug.local;192.168.86.52;80;\n"
+    )
+    mdns = wn.parse_avahi_browse(avahi_raw)
+    assert mdns["192.168.86.44"]["friendly"] == "Living Room TV"
+    assert "_airplay._tcp" in mdns["192.168.86.44"]["services"]
+    assert mdns["192.168.86.52"]["hostname"] == "kasa-plug"
+
+    # OUI vendor + Private MAC detection
+    vendor_pi, priv_pi = wn.lookup_mac_vendor("dc:a6:32:11:22:33")
+    assert vendor_pi == "Raspberry Pi"
+    assert priv_pi is False
+
+    vendor_priv, is_priv = wn.lookup_mac_vendor("da:12:34:56:78:9a")
+    assert is_priv is True
+    assert "Private" in vendor_priv
+
+    # Device category inference
+    assert wn.infer_device_category(hostname="Kia-iPhone", is_private_mac=True) == "phone"
+    assert wn.infer_device_category(hostname="LGwebOSTV", services=["_airplay._tcp"]) == "tv"
+    assert wn.infer_device_category(vendor="TP-Link Kasa") == "smart_plug"
+    assert wn.infer_device_category(vendor="Sonos") == "speaker"
+    assert wn.infer_device_category(is_gateway=True) == "router"
+
+
+def test_network_scanner_bandwidth_and_alias_endpoints(tmp_path, monkeypatch):
+    for sub in ("photoframe", "vpn", "webui"):
+        (tmp_path / sub).mkdir()
+    cfg_path = tmp_path / "webui" / "config.json"
+    cfg_path.write_text(json.dumps({"port": 8080}), encoding="utf-8")
+    ctx = ws.AppContext(cfg_path)
+
+    # Mock hotspot station dump + LAN neighbors + monotonic clock for live Mbps delta
+    sample_idx = {"n": 0}
+    iw_outputs = [
+        "Station 50:c7:bf:11:22:33 (on wlan0)\n\trx bytes:\t1000000\n\ttx bytes:\t5000000\n\tsignal:\t-48 dBm\n\tconnected time:\t120 seconds\n",
+        "Station 50:c7:bf:11:22:33 (on wlan0)\n\trx bytes:\t2000000\n\ttx bytes:\t15000000\n\tsignal:\t-48 dBm\n\tconnected time:\t125 seconds\n",
+    ]
+    clock = {"t": 1000.0}
+
+    class FakeProc:
+        def __init__(self, stdout):
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    def fake_run(cmd, **_kwargs):
+        if cmd[:3] == ["iw", "dev", "wlan0"]:
+            idx = min(sample_idx["n"], len(iw_outputs) - 1)
+            return FakeProc(iw_outputs[idx])
+        return FakeProc("")
+
+    monkeypatch.setattr(wn.vm, "interface_exists", lambda iface: iface in ("eth0", "wlan0"))
+    monkeypatch.setattr(wn.vm, "get_interface_ipv4", lambda iface: "192.168.86.30" if iface == "eth0" else None)
+    monkeypatch.setattr(wn.shutil, "which", lambda name: f"/usr/bin/{name}" if name == "iw" else None)
+    monkeypatch.setattr(wn.subprocess, "run", fake_run)
+    monkeypatch.setattr(wn, "parse_dnsmasq_leases", lambda *a, **kw: {"50:C7:BF:11:22:33": {"ip": "10.66.0.15", "hostname": "living-room-tv"}})
+    monkeypatch.setattr(wn.wm, "scan_lan_neighbors", lambda iface: [{"ip": "192.168.86.1", "mac": "30:FD:38:00:00:01", "state": "REACHABLE"}] if iface == "eth0" else [])
+    monkeypatch.setattr(wn, "get_default_gateway", lambda _iface="": "192.168.86.1")
+    monkeypatch.setattr(wn, "get_interface_mac", lambda _iface="": "DC:A6:32:AA:BB:CC")
+    monkeypatch.setattr(wn, "reverse_dns_lookup", lambda _ip: "")
+    monkeypatch.setattr(wn, "discover_mdns_hosts", lambda **_kw: {})
+    monkeypatch.setattr(wn.time, "monotonic", lambda: clock["t"])
+
+    # First scan establishes baseline byte counters
+    snap1 = ctx.network.scan(active_sweep=False)
+    assert snap1["summary"]["hotspot_devices"] == 1
+    hs_dev1 = next(d for d in snap1["devices"] if d["mac"] == "50:C7:BF:11:22:33")
+    assert hs_dev1["bandwidth_available"] is True
+    assert hs_dev1["download_mbps"] is None
+
+    # Second scan 5s later: +10,000,000 bytes DL = 16.0 Mbps, +1,000,000 bytes UL = 1.6 Mbps
+    sample_idx["n"] = 1
+    clock["t"] = 1005.0
+    snap2 = ctx.network.scan(active_sweep=False)
+    hs_dev2 = next(d for d in snap2["devices"] if d["mac"] == "50:C7:BF:11:22:33")
+    assert hs_dev2["download_mbps"] == pytest.approx(16.0, abs=0.05)
+    assert hs_dev2["upload_mbps"] == pytest.approx(1.6, abs=0.05)
+    lan_gw = next(d for d in snap2["devices"] if d["mac"] == "30:FD:38:00:00:01")
+    assert lan_gw["category"] == "router"
+    assert lan_gw["bandwidth_available"] is False
+
+    # Rename & re-categorize via POST /api/network/alias
+    alias_payload = json.dumps({"mac": "50:c7:bf:11:22:33", "name": "Basement Smart Plug", "category": "smart_plug"}).encode()
+    req = (
+        b"POST /api/network/alias HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        b"X-Requested-With: rp-inky\r\n"
+        + f"Content-Length: {len(alias_payload)}\r\n\r\n".encode()
+        + alias_payload
+    )
+    code, body = _dispatch_http(ctx, req)
+    assert code == 200
+    resp_data = json.loads(body.decode("utf-8"))
+    renamed = next(d for d in resp_data["devices"] if d["mac"] == "50:C7:BF:11:22:33")
+    assert renamed["name"] == "Basement Smart Plug"
+    assert renamed["category"] == "smart_plug"
+    assert renamed["icon"] == "🔌"
+
 

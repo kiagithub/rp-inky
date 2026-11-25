@@ -40,15 +40,18 @@
   }
 
   // -------------------- Tabs & Auth --------------------
+  let activeTab = "photos";
   $$(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       $$(".tab").forEach((b) => b.classList.remove("active"));
       $$(".tab-panel").forEach((p) => p.classList.remove("active"));
       btn.classList.add("active");
-      $(`#tab-${btn.dataset.tab}`).classList.add("active");
-      if (btn.dataset.tab === "vpn") loadVpnStatus();
-      if (btn.dataset.tab === "monitor") loadMonitor();
-      if (btn.dataset.tab === "wol") loadWol();
+      activeTab = btn.dataset.tab;
+      $(`#tab-${activeTab}`).classList.add("active");
+      if (activeTab === "vpn") loadVpnStatus();
+      if (activeTab === "network") loadNetwork(false);
+      if (activeTab === "monitor") loadMonitor();
+      if (activeTab === "wol") loadWol();
     });
   });
 
@@ -755,6 +758,227 @@
     }
   });
 
+  // -------------------- Tab 3: Network & Devices --------------------
+  let lastNetworkData = null;
+
+  function formatDuration(sec) {
+    if (sec == null || sec < 0) return "";
+    if (sec < 60) return `${sec}s`;
+    const mins = Math.floor(sec / 60);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+    return `${Math.floor(hrs / 24)}d ${hrs % 24}h`;
+  }
+
+  function renderDeviceRow(d) {
+    const typePill = `<span class="pill pill-neutral">${esc(d.category_label)}</span>`;
+    const privPill = d.is_private_mac ? `<span class="pill pill-neutral" title="Phone/tablet using randomized MAC">Private MAC</span>` : "";
+    const sigPart = d.signal_dbm != null ? `<span>📶 ${d.signal_dbm} dBm</span>` : "";
+    const connPart = d.connected_seconds != null ? `<span>⏱ ${formatDuration(d.connected_seconds)}</span>` : "";
+
+    let bwHtml = "";
+    if (d.bandwidth_available) {
+      bwHtml = `
+        <div class="device-bw">
+          <div class="bw-rates">
+            <span class="bw-down" title="Download speed">↓ ${esc(d.download_rate_human)}</span>
+            <span class="bw-up" title="Upload speed">↑ ${esc(d.upload_rate_human)}</span>
+          </div>
+          <div class="bw-totals">Total: ↓ ${esc(d.download_human)} • ↑ ${esc(d.upload_human)}</div>
+        </div>`;
+    } else {
+      bwHtml = `
+        <div class="device-bw">
+          <span class="bw-na" title="${esc(d.bandwidth_note || "Direct via main router")}">Direct via main router</span>
+          <span class="bw-totals">Bandwidth N/A from Pi</span>
+        </div>`;
+    }
+
+    const canWatch = Boolean(d.ip) && !d.is_self;
+    const canWol = Boolean(d.mac) && !d.is_self && !d.is_gateway;
+
+    return `
+      <div class="device-row ${d.network === "hotspot" ? "is-hotspot" : ""}">
+        <div class="device-main">
+          <div class="device-icon">${esc(d.icon || "📶")}</div>
+          <div class="device-info">
+            <div class="device-name-line">
+              <span class="device-name">${esc(d.name)}</span>
+              ${typePill}
+              ${privPill}
+            </div>
+            <div class="device-meta">
+              ${d.ip ? `<code>${esc(d.ip)}</code>` : ""}
+              <code>${esc(d.mac)}</code>
+              <span>${esc(d.vendor)}</span>
+              ${sigPart}
+              ${connPart}
+            </div>
+          </div>
+        </div>
+        ${bwHtml}
+        <div class="device-actions">
+          <button type="button" class="btn btn-ghost btn-sm"
+            data-dev-edit="${esc(d.mac)}"
+            data-dev-name="${esc(d.custom_name || "")}"
+            data-dev-auto="${esc(d.name)}"
+            data-dev-cat="${esc(d.custom_name ? d.category : "")}"
+            data-dev-ip="${esc(d.ip || "")}">Rename</button>
+          ${canWatch ? `<button type="button" class="btn btn-ghost btn-sm" data-dev-watch-ip="${esc(d.ip)}" data-dev-watch-name="${esc(d.name)}">+ Watch</button>` : ""}
+          ${canWol ? `<button type="button" class="btn btn-ghost btn-sm" data-dev-wol-mac="${esc(d.mac)}" data-dev-wol-ip="${esc(d.ip || "")}" data-dev-wol-name="${esc(d.name)}">+ WoL</button>` : ""}
+        </div>
+      </div>`;
+  }
+
+  function renderNetworkView() {
+    if (!lastNetworkData) return;
+    const data = lastNetworkData;
+    const sum = data.summary || {};
+    $("#net-stat-total").textContent = String(sum.total_devices ?? 0);
+    $("#net-stat-split").textContent = `${sum.hotspot_devices ?? 0} on VPN Hotspot • ${sum.lan_devices ?? 0} on Home LAN`;
+
+    const vpnSt = sum.vpn_stats;
+    if (vpnSt && vpnSt.available) {
+      $("#net-stat-vpn-rate").textContent = `↓ ${vpnSt.rx_rate_human}  ↑ ${vpnSt.tx_rate_human}`;
+      $("#net-stat-vpn-total").textContent = `${vpnSt.interface}: ↓ ${vpnSt.rx_human} • ↑ ${vpnSt.tx_human}`;
+    } else {
+      $("#net-stat-vpn-rate").textContent = "Disconnected";
+      $("#net-stat-vpn-total").textContent = "VPN tunnel inactive";
+    }
+
+    const wanSt = sum.wan_stats;
+    if (wanSt && wanSt.available) {
+      $("#net-stat-wan-rate").textContent = `↓ ${wanSt.rx_rate_human}  ↑ ${wanSt.tx_rate_human}`;
+      $("#net-stat-wan-total").textContent = `${wanSt.interface}: ↓ ${wanSt.rx_human} • ↑ ${wanSt.tx_human}`;
+    } else {
+      $("#net-stat-wan-rate").textContent = "—";
+      $("#net-stat-wan-total").textContent = "Interface stats unavailable";
+    }
+
+    const q = ($("#net-search").value || "").trim().toLowerCase();
+    const scope = $("#net-filter-scope").value || "all";
+
+    const matches = (d) => {
+      if (!q) return true;
+      const hay = `${d.name} ${d.hostname} ${d.ip} ${d.mac} ${d.vendor} ${d.category_label} ${d.category}`.toLowerCase();
+      return hay.includes(q);
+    };
+
+    const hotspotDevs = (data.devices || []).filter((d) => d.network === "hotspot" && matches(d));
+    const lanDevs = (data.devices || []).filter((d) => d.network !== "hotspot" && matches(d));
+
+    $("#net-hotspot-count").textContent = String(hotspotDevs.length);
+    $("#net-lan-count").textContent = String(lanDevs.length);
+
+    $("#net-hotspot-section").classList.toggle("hidden", scope === "lan");
+    $("#net-lan-section").classList.toggle("hidden", scope === "hotspot");
+
+    const hsList = $("#net-hotspot-list");
+    hsList.innerHTML = hotspotDevs.length
+      ? hotspotDevs.map(renderDeviceRow).join("")
+      : `<p class="muted small">No devices currently connected to <strong>${esc(sum.hotspot_ssid || "UK-Frame-VPN")}</strong>.</p>`;
+
+    const lanList = $("#net-lan-list");
+    lanList.innerHTML = lanDevs.length
+      ? lanDevs.map(renderDeviceRow).join("")
+      : `<p class="muted small">No matching LAN devices found. Click <strong>Scan Whole Network</strong> to sweep your subnet.</p>`;
+
+    $("#net-scan-meta").textContent = `Last updated: ${data.scanned_at}${sum.mdns_available ? " • mDNS/Bonjour active" : ""}`;
+
+    // Bind row action buttons
+    $("#tab-network").querySelectorAll("button[data-dev-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        $("#dev-modal-mac").value = btn.dataset.devEdit;
+        $("#dev-modal-name").value = btn.dataset.devName || "";
+        $("#dev-modal-category").value = btn.dataset.devCat || "";
+        $("#dev-modal-sub").textContent = `${btn.dataset.devAuto} • ${btn.dataset.devIp || "No IP"} • ${btn.dataset.devEdit}`;
+        $("#device-modal").classList.remove("hidden");
+      });
+    });
+
+    $("#tab-network").querySelectorAll("button[data-dev-watch-ip]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          await api("/api/monitor/targets/add", {
+            method: "POST",
+            json: { name: btn.dataset.devWatchName, type: "ping", host: btn.dataset.devWatchIp },
+          });
+          showToast(`Added ${btn.dataset.devWatchName} to Watchdog!`);
+        } catch (err) {
+          showToast(err.message, true);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    $("#tab-network").querySelectorAll("button[data-dev-wol-mac]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          await api("/api/wol/add", {
+            method: "POST",
+            json: { name: btn.dataset.devWolName, mac: btn.dataset.devWolMac, ip: btn.dataset.devWolIp },
+          });
+          showToast(`Saved ${btn.dataset.devWolName} to Wake-on-LAN!`);
+        } catch (err) {
+          showToast(err.message, true);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  async function loadNetwork(sweep = false) {
+    const btn = $("#btn-net-sweep");
+    if (sweep && btn) {
+      btn.disabled = true;
+      btn.textContent = "Scanning Subnet…";
+    }
+    try {
+      lastNetworkData = await api(sweep ? "/api/network/devices?sweep=1" : "/api/network/devices");
+      renderNetworkView();
+      if (sweep) {
+        showToast(`Found ${lastNetworkData.summary.total_devices} device(s) on your network!`);
+      }
+    } catch (err) {
+      if (sweep) showToast(err.message, true);
+    } finally {
+      if (sweep && btn) {
+        btn.disabled = false;
+        btn.textContent = "🔍 Scan Whole Network";
+      }
+    }
+  }
+
+  $("#btn-net-refresh").addEventListener("click", () => loadNetwork(false));
+  $("#btn-net-sweep").addEventListener("click", () => loadNetwork(true));
+  $("#net-search").addEventListener("input", renderNetworkView);
+  $("#net-filter-scope").addEventListener("change", renderNetworkView);
+
+  $("#btn-close-dev-modal").addEventListener("click", () => $("#device-modal").classList.add("hidden"));
+  $("#device-alias-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      lastNetworkData = await api("/api/network/alias", {
+        method: "POST",
+        json: {
+          mac: $("#dev-modal-mac").value,
+          name: $("#dev-modal-name").value.trim(),
+          category: $("#dev-modal-category").value,
+        },
+      });
+      $("#device-modal").classList.add("hidden");
+      renderNetworkView();
+      showToast("Saved device label!");
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+
   async function refreshAll() {
     try {
       await Promise.all([loadGallery(), loadVpnStatus(), loadMonitor()]);
@@ -767,5 +991,8 @@
   setInterval(() => {
     loadVpnStatus().catch(() => {});
     loadMonitor().catch(() => {});
-  }, 15000);
+    if (activeTab === "network") {
+      loadNetwork(false).catch(() => {});
+    }
+  }, 10000);
 })();

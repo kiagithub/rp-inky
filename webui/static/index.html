@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0f172a">
-  <title>rp-inky Hub — Frame • VPN • Watchdog • WoL</title>
-  <link rel="stylesheet" href="/style.css?v=2">
+  <title>rp-inky Hub — Frame • VPN • Network • Watchdog • WoL</title>
+  <link rel="stylesheet" href="/style.css?v=3">
 </head>
 <body>
   <header class="topbar">
@@ -14,7 +14,7 @@
       <span class="brand-dot"></span>
       <div>
         <h1>rp-inky Hub</h1>
-        <p class="subtitle">Photo Frame • UK VPN • Watchdog • Wake-on-LAN</p>
+        <p class="subtitle">Photo Frame • UK VPN • Network • Watchdog • Wake-on-LAN</p>
       </div>
     </div>
     <div class="status-pills">
@@ -26,6 +26,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="photos">🖼 Photos</button>
     <button class="tab" data-tab="vpn">🛡 UK VPN</button>
+    <button class="tab" data-tab="network">🌐 Network</button>
     <button class="tab" data-tab="monitor">📡 Watchdog</button>
     <button class="tab" data-tab="wol">⚡ Wake-on-LAN</button>
   </nav>
@@ -201,7 +202,66 @@
       </div>
     </section>
 
-    <!-- ==================== TAB 3: WATCHDOG & UPTIME ==================== -->
+    <!-- ==================== TAB 3: NETWORK & DEVICES ==================== -->
+    <section id="tab-network" class="tab-panel">
+      <div class="net-summary-grid" id="net-summary">
+        <div class="stat-card">
+          <div class="stat-label">Connected Devices</div>
+          <div class="stat-val" id="net-stat-total">—</div>
+          <div class="stat-sub" id="net-stat-split">Scanning…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">VPN Tunnel Traffic</div>
+          <div class="stat-val" id="net-stat-vpn-rate">—</div>
+          <div class="stat-sub" id="net-stat-vpn-total">Session total: —</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pi Ethernet (eth0)</div>
+          <div class="stat-val" id="net-stat-wan-rate">—</div>
+          <div class="stat-sub" id="net-stat-wan-total">Session total: —</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2>Connected Devices</h2>
+            <p class="muted small" id="net-scan-meta">Click "Scan Whole Network" to discover all active devices on your home Wi-Fi &amp; VPN hotspot.</p>
+          </div>
+          <div class="btn-row wrap-row">
+            <button id="btn-net-refresh" class="btn btn-ghost btn-sm" type="button">Refresh Live Stats</button>
+            <button id="btn-net-sweep" class="btn btn-primary btn-sm" type="button">🔍 Scan Whole Network</button>
+          </div>
+        </div>
+
+        <div class="net-toolbar">
+          <input type="text" id="net-search" placeholder="Filter by name, IP, MAC, vendor, or type (e.g. TV, Plug, iPhone)…">
+          <select id="net-filter-scope">
+            <option value="all">All Networks</option>
+            <option value="hotspot">VPN Hotspot Only (Live Bandwidth)</option>
+            <option value="lan">Home Router LAN Only</option>
+          </select>
+        </div>
+
+        <div id="net-hotspot-section" class="mt">
+          <div class="net-section-title">
+            <h3>🛡 VPN Hotspot Clients <span class="pill pill-ok" id="net-hotspot-count">0</span></h3>
+            <span class="muted small">Live download/upload speed &amp; total data per device</span>
+          </div>
+          <div id="net-hotspot-list" class="device-list mt-xs"></div>
+        </div>
+
+        <div id="net-lan-section" class="mt">
+          <div class="net-section-title">
+            <h3>🏠 Home Router LAN Devices <span class="pill pill-neutral" id="net-lan-count">0</span></h3>
+            <span class="muted small">Per-device bandwidth is only visible for devices routed through the Pi</span>
+          </div>
+          <div id="net-lan-list" class="device-list mt-xs"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 4: WATCHDOG & UPTIME ==================== -->
     <section id="tab-monitor" class="tab-panel">
       <div class="card">
         <div class="card-header">
@@ -351,6 +411,43 @@
     </div>
   </div>
 
-  <script src="/app.js?v=2"></script>
+  <!-- Rename / Categorize Network Device Modal -->
+  <div id="device-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Rename &amp; Tag Device</h3>
+      <p class="muted small" id="dev-modal-sub"></p>
+      <form id="device-alias-form" class="stack mt-sm">
+        <input type="hidden" id="dev-modal-mac">
+        <div>
+          <label class="field-label">Friendly Name (leave blank to auto-detect)</label>
+          <input type="text" id="dev-modal-name" placeholder="e.g. Living Room TV, Bedroom Lamp Plug">
+        </div>
+        <div>
+          <label class="field-label">Device Type</label>
+          <select id="dev-modal-category">
+            <option value="">Auto-Detect</option>
+            <option value="tv">📺 TV / Streaming</option>
+            <option value="phone">📱 Phone / Tablet</option>
+            <option value="computer">💻 Computer / Laptop</option>
+            <option value="smart_plug">🔌 Smart Plug / Switch</option>
+            <option value="speaker">🔊 Smart Speaker</option>
+            <option value="camera">📷 Camera / Doorbell</option>
+            <option value="iot">💡 Smart Home / IoT</option>
+            <option value="gaming">🎮 Gaming Console</option>
+            <option value="printer">🖨 Printer</option>
+            <option value="router">🌐 Router / Gateway</option>
+            <option value="pi">🍓 Raspberry Pi</option>
+            <option value="other">📶 Network Device</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" id="btn-close-dev-modal" class="btn btn-ghost">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js?v=3"></script>
 </body>
 </html>

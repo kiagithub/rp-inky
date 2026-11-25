@@ -26,6 +26,7 @@ if str(REPO_ROOT) not in sys.path:
 from photoframe import photoframe as pf  # noqa: E402
 from vpn import manager as vm  # noqa: E402
 from webui import monitor as wm  # noqa: E402
+from webui import network as wn  # noqa: E402
 from webui import photos as wp  # noqa: E402
 from webui import vpn_bridge as wb  # noqa: E402
 
@@ -72,6 +73,9 @@ DEFAULT_WEBUI_CONFIG: dict[str, Any] = {
         "broadcast_ip": "255.255.255.255",
         "port": 9,
         "devices": [],
+    },
+    "network": {
+        "aliases": {},
     },
 }
 
@@ -180,6 +184,11 @@ class AppContext:
             local_config_updater=self.update_local_config,
             vpn_config_path=cfg["_vpn_config_path"],
             state_dir=cfg["_state_dir"],
+        )
+        self.network = wn.NetworkScanner(
+            webui_config_getter=self.get_config,
+            local_config_updater=self.update_local_config,
+            vpn_config_path=cfg["_vpn_config_path"],
         )
 
     def get_config(self) -> dict[str, Any]:
@@ -310,6 +319,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             elif path == "/api/wol/scan":
                 vpn_cfg = vm.load_vpn_config(self.ctx.get_config()["_vpn_config_path"])
                 self._send_json({"neighbors": wm.scan_lan_neighbors(vpn_cfg["wan_interface"])})
+            elif path == "/api/network/devices":
+                sweep = (query.get("sweep") or [""])[0] == "1"
+                if sweep:
+                    self._send_json(self.ctx.network.scan(active_sweep=True))
+                else:
+                    self._send_json(self.ctx.network.get_snapshot(max_age_seconds=4.0))
             else:
                 self._send_json({"error": "Unknown endpoint"}, status=HTTPStatus.NOT_FOUND)
         except (ValueError, FileNotFoundError) as exc:
@@ -442,6 +457,16 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
             elif path == "/api/wol/wake":
                 self._send_json(self.ctx.monitor.wake_device(self._read_json_body()))
+
+            elif path == "/api/network/alias":
+                body_json = self._read_json_body()
+                self._send_json(
+                    self.ctx.network.set_alias(
+                        mac=str(body_json.get("mac") or ""),
+                        name=str(body_json.get("name") or ""),
+                        category=str(body_json.get("category") or ""),
+                    )
+                )
 
             else:
                 self._send_json({"error": "Unknown endpoint"}, status=HTTPStatus.NOT_FOUND)
