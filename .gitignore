@@ -23,3 +23,6 @@ vpn/auth.txt
 vpn/config.local.json
 vpn/profiles/*
 !vpn/profiles/.gitkeep
+
+webui/.state/
+webui/config.local.json

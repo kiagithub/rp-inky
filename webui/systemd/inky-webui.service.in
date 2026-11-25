@@ -1,0 +1,16 @@
+[Unit]
+Description=rp-inky Web Dashboard, Phone Photo Uploader, Watchdog & Wake-on-LAN
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__WEBUI_DIR__
+ExecStart=__VENV__/bin/python __WEBUI_DIR__/server.py --config __WEBUI_DIR__/config.json
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,57 @@
+{
+  "host": "0.0.0.0",
+  "port": 8080,
+  "pin": "",
+  "photoframe_config": "../photoframe/config.json",
+  "vpn_config": "../vpn/config.json",
+  "state_dir": ".state",
+  "monitor": {
+    "enabled": true,
+    "interval_seconds": 60,
+    "history_size": 60,
+    "alert_threshold": 2,
+    "targets": [
+      {
+        "id": "isp-wan",
+        "name": "Home ISP Uplink (WAN)",
+        "type": "iface_ping",
+        "host": "1.1.1.1",
+        "interface": "eth0",
+        "builtin": true
+      },
+      {
+        "id": "uk-vpn",
+        "name": "Surfshark UK VPN Tunnel",
+        "type": "vpn_tunnel",
+        "host": "1.1.1.1",
+        "builtin": true
+      }
+    ],
+    "notifications": {
+      "telegram": {
+        "enabled": false,
+        "bot_token": "",
+        "chat_id": ""
+      },
+      "pushover": {
+        "enabled": false,
+        "app_token": "",
+        "user_key": ""
+      },
+      "ntfy": {
+        "enabled": false,
+        "server": "https://ntfy.sh",
+        "topic": ""
+      },
+      "webhook": {
+        "enabled": false,
+        "url": ""
+      }
+    }
+  },
+  "wol": {
+    "broadcast_ip": "255.255.255.255",
+    "port": 9,
+    "devices": []
+  }
+}

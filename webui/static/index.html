@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0f172a">
+  <title>rp-inky Hub — Frame • VPN • Watchdog • WoL</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <div>
+        <h1>rp-inky Hub</h1>
+        <p class="subtitle">Photo Frame • UK VPN • Watchdog • Wake-on-LAN</p>
+      </div>
+    </div>
+    <div class="status-pills">
+      <span id="pill-vpn" class="pill pill-neutral">VPN: …</span>
+      <span id="pill-wan" class="pill pill-neutral">ISP: …</span>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="photos">🖼 Photos</button>
+    <button class="tab" data-tab="vpn">🛡 UK VPN</button>
+    <button class="tab" data-tab="monitor">📡 Watchdog</button>
+    <button class="tab" data-tab="wol">⚡ Wake-on-LAN</button>
+  </nav>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <div id="pin-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Enter Dashboard PIN</h2>
+      <p class="muted">This Raspberry Pi dashboard is PIN-protected.</p>
+      <form id="pin-form">
+        <input type="password" id="pin-input" placeholder="PIN" autocomplete="current-password" required>
+        <button type="submit" class="btn btn-primary full">Unlock</button>
+      </form>
+    </div>
+  </div>
+
+  <main class="container">
+    <!-- ==================== TAB 1: PHOTOS ==================== -->
+    <section id="tab-photos" class="tab-panel active">
+      <div class="grid-two">
+        <div class="card">
+          <div class="card-header">
+            <h2>Live E-Ink Frame</h2>
+            <div class="btn-row">
+              <button id="btn-next-photo" class="btn btn-primary btn-sm">Next Random</button>
+              <button id="btn-unpin-photo" class="btn btn-ghost btn-sm hidden">Unpin</button>
+            </div>
+          </div>
+          <div class="frame-preview-wrap">
+            <img id="frame-preview-img" src="/api/frame/preview" alt="Live 480x800 frame preview">
+          </div>
+          <p id="frame-caption" class="muted center-text"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Upload from Phone / Mac</h2>
+          </div>
+          <form id="upload-form" class="stack">
+            <label class="file-drop" for="photo-input">
+              <input type="file" id="photo-input" name="photos" accept="image/*,.heic,.heif" multiple required>
+              <span id="file-drop-label">Tap to select photo(s) from Camera Roll</span>
+            </label>
+
+            <div id="crop-box-wrap" class="crop-section hidden">
+              <div class="crop-preview-frame">
+                <img id="crop-preview-img" alt="Crop preview">
+              </div>
+              <div class="crop-sliders stack-sm">
+                <label>Horizontal Crop Position <input type="range" id="crop-x" min="0" max="1" step="0.02" value="0.5"></label>
+                <label>Vertical Crop Position <input type="range" id="crop-y" min="0" max="1" step="0.02" value="0.5"></label>
+              </div>
+            </div>
+
+            <div class="row-inputs">
+              <div>
+                <label class="field-label">Place Override (optional)</label>
+                <input type="text" id="upload-location" placeholder="Auto from GPS EXIF (e.g. London, UK)">
+              </div>
+              <div>
+                <label class="field-label">Date Override (optional)</label>
+                <input type="date" id="upload-date">
+              </div>
+            </div>
+
+            <label class="checkbox-row">
+              <input type="checkbox" id="upload-show-now" checked>
+              <span>Display on the e-ink frame immediately after upload</span>
+            </label>
+
+            <button type="submit" id="btn-upload" class="btn btn-primary full">Upload &amp; Crop to 480×800</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Photo Album (<span id="album-count">0</span>)</h2>
+          <button id="btn-refresh-gallery" class="btn btn-ghost btn-sm">Refresh</button>
+        </div>
+        <div id="gallery-grid" class="gallery-grid"></div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: UK VPN ==================== -->
+    <section id="tab-vpn" class="tab-panel">
+      <div class="grid-two">
+        <div class="card">
+          <div class="card-header">
+            <h2>Surfshark Tunnel &amp; Hotspot</h2>
+            <span id="vpn-state-badge" class="pill pill-neutral">Checking…</span>
+          </div>
+          <div class="kv-grid" id="vpn-kv"></div>
+          <div class="btn-row wrap-row mt">
+            <button class="btn btn-primary" data-vpn-action="next">⟳ Next UK Server</button>
+            <button class="btn btn-ghost" data-vpn-action="restart">Restart</button>
+            <button class="btn btn-ghost" data-vpn-action="up">Start</button>
+            <button class="btn btn-danger" data-vpn-action="down">Stop</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Speed Benchmark (25 MB)</h2>
+            <button id="btn-run-bench" class="btn btn-primary btn-sm">Run Speed Test</button>
+          </div>
+          <p class="muted">Compares direct Ethernet WAN vs. encrypted Surfshark tunnel directly on the Pi 4.</p>
+          <div id="bench-results" class="bench-box">
+            <div class="bench-row">
+              <span>Direct WAN (<code id="bench-wan-iface">eth0</code>)</span>
+              <strong id="bench-wan-val">—</strong>
+            </div>
+            <div class="bench-row">
+              <span>VPN Tunnel (<code id="bench-vpn-iface">wg-vpn</code>)</span>
+              <strong id="bench-vpn-val">—</strong>
+            </div>
+            <p id="bench-meta" class="muted small"></p>
+          </div>
+
+          <hr class="divider">
+          <h3>Import Surfshark Config (.conf / .ovpn)</h3>
+          <form id="vpn-upload-form" class="row-form mt-sm">
+            <input type="file" id="vpn-file-input" accept=".conf,.ovpn" multiple required>
+            <button type="submit" class="btn btn-ghost">Import</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Imported VPN Profiles</h2>
+          <span class="muted small">Tap any profile to switch immediately</span>
+        </div>
+        <div id="vpn-profiles-list" class="profile-grid"></div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 3: WATCHDOG & UPTIME ==================== -->
+    <section id="tab-monitor" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <h2>ISP, UK VPN &amp; Smart-Home Uptime</h2>
+          <button id="btn-check-now" class="btn btn-primary btn-sm">Probe All Now</button>
+        </div>
+        <div id="monitor-list" class="monitor-list"></div>
+      </div>
+
+      <div class="grid-two">
+        <div class="card">
+          <h2>Add Custom Monitor</h2>
+          <form id="add-monitor-form" class="stack mt-sm">
+            <div>
+              <label class="field-label">Friendly Name</label>
+              <input type="text" id="mon-name" placeholder="e.g. Home NAS, Plex, Nest Router" required>
+            </div>
+            <div class="row-inputs">
+              <div>
+                <label class="field-label">Probe Type</label>
+                <select id="mon-type">
+                  <option value="ping">ICMP Ping</option>
+                  <option value="http">HTTP / HTTPS URL</option>
+                  <option value="tcp">TCP Port</option>
+                </select>
+              </div>
+              <div id="mon-port-wrap" class="hidden">
+                <label class="field-label">TCP Port</label>
+                <input type="number" id="mon-port" value="22" min="1" max="65535">
+              </div>
+            </div>
+            <div>
+              <label class="field-label">Host / IP / URL</label>
+              <input type="text" id="mon-host" placeholder="192.168.86.1 or https://example.com" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Monitor</button>
+          </form>
+
+          <hr class="divider">
+          <h3>Recent Incidents</h3>
+          <div id="incidents-list" class="incidents-list muted small">No outages recorded.</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Phone Push Alerts</h2>
+            <button id="btn-test-alert" class="btn btn-ghost btn-sm" type="button">Send Test</button>
+          </div>
+          <p class="muted small">Get notified on your phone when your ISP, Surfshark VPN, or home servers go down or recover.</p>
+          <form id="notif-form" class="stack mt-sm">
+            <div class="notif-block">
+              <label class="checkbox-row"><input type="checkbox" id="ntfy-enabled"> <strong>ntfy.sh</strong> (easiest — install free ntfy app &amp; pick a secret topic)</label>
+              <div class="row-inputs mt-xs">
+                <input type="text" id="ntfy-server" placeholder="https://ntfy.sh" value="https://ntfy.sh">
+                <input type="text" id="ntfy-topic" placeholder="my-secret-pi-alerts">
+              </div>
+            </div>
+
+            <div class="notif-block">
+              <label class="checkbox-row"><input type="checkbox" id="tg-enabled"> <strong>Telegram Bot</strong></label>
+              <div class="row-inputs mt-xs">
+                <input type="password" id="tg-token" placeholder="Bot Token (leave blank to keep)">
+                <input type="text" id="tg-chat" placeholder="Chat ID">
+              </div>
+            </div>
+
+            <div class="notif-block">
+              <label class="checkbox-row"><input type="checkbox" id="po-enabled"> <strong>Pushover</strong></label>
+              <div class="row-inputs mt-xs">
+                <input type="password" id="po-token" placeholder="App Token (leave blank to keep)">
+                <input type="text" id="po-user" placeholder="User Key">
+              </div>
+            </div>
+
+            <div class="notif-block">
+              <label class="checkbox-row"><input type="checkbox" id="wh-enabled"> <strong>Discord / Slack / Webhook URL</strong></label>
+              <input type="url" id="wh-url" class="mt-xs" placeholder="https://discord.com/api/webhooks/...">
+            </div>
+
+            <button type="submit" class="btn btn-primary full">Save Notification Settings</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 4: WAKE-ON-LAN ==================== -->
+    <section id="tab-wol" class="tab-panel">
+      <div class="grid-two">
+        <div class="card">
+          <div class="card-header">
+            <h2>Saved Computers &amp; Devices</h2>
+            <button id="btn-refresh-wol" class="btn btn-ghost btn-sm">Refresh Status</button>
+          </div>
+          <div id="wol-list" class="stack-sm"></div>
+        </div>
+
+        <div class="card">
+          <h2>Add Wake-on-LAN Target</h2>
+          <form id="wol-add-form" class="stack mt-sm">
+            <div>
+              <label class="field-label">Device Name</label>
+              <input type="text" id="wol-name" placeholder="e.g. Desktop PC, Home Server" required>
+            </div>
+            <div class="row-inputs">
+              <div>
+                <label class="field-label">MAC Address</label>
+                <input type="text" id="wol-mac" placeholder="AA:BB:CC:DD:EE:FF" required>
+              </div>
+              <div>
+                <label class="field-label">LAN IP (optional, for Awake status)</label>
+                <input type="text" id="wol-ip" placeholder="192.168.86.50">
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Device</button>
+          </form>
+
+          <hr class="divider">
+          <div class="card-header">
+            <h3>Discover Devices on LAN</h3>
+            <button id="btn-scan-lan" class="btn btn-ghost btn-sm" type="button">Scan ARP Table</button>
+          </div>
+          <div id="lan-scan-list" class="stack-xs muted small">Click "Scan ARP Table" to list active MAC addresses on eth0.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Edit Metadata Modal -->
+  <div id="meta-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Edit Photo Caption</h3>
+      <form id="meta-form" class="stack mt-sm">
+        <input type="hidden" id="meta-photo-name">
+        <div>
+          <label class="field-label">Location</label>
+          <input type="text" id="meta-location" placeholder="e.g. Edinburgh, UK">
+        </div>
+        <div>
+          <label class="field-label">Capture Date</label>
+          <input type="date" id="meta-date">
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" id="btn-close-meta" class="btn btn-ghost">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

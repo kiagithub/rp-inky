@@ -1,9 +1,10 @@
 # rp-inky
 
-A dual-purpose Raspberry Pi 4 project combining:
+A multi-purpose Raspberry Pi 4 appliance combining:
 
 1. **E-ink digital photo frame** for the **Inky Impression 7.3" (PIM773)** (`photoframe/`).
 2. **Always-On high-speed Surfshark UK VPN & 5 GHz Wi-Fi Hotspot** with multi-profile WireGuard/OpenVPN switching, leak-proof `nftables` kill-switch, automatic UK failover, and 500+ Mbps LAN gateway support (`vpn/`).
+3. **Mobile Web Hub, Phone Photo Uploader, Uptime Watchdog & Wake-on-LAN** (`webui/`) at `http://<pi-ip>:8080`.
 
 The panel is mounted in portrait: photos are composed at **480 × 800**, rotated
 to the panel's native 800 × 480 size, and changed every **20 minutes**. A new
@@ -42,7 +43,12 @@ rp-inky/
 │   ├── config.json   VPN & 5 GHz hotspot defaults
 │   ├── profiles/     imported WireGuard (.conf) & OpenVPN (.ovpn) configs (git-ignored)
 │   └── README.md     500 Mbps setup, multi-config switching & troubleshooting
-├── tests/            offline unit tests (photo frame + VPN)
+├── webui/            mobile Web Hub (photo uploader, 1-tap VPN, watchdog & Wake-on-LAN)
+│   ├── server.py     HTTP server & REST API (default port 8080)
+│   ├── photos.py     camera-roll 480x800 crop uploader & instant frame trigger
+│   ├── monitor.py    ISP/VPN/LAN uptime monitor, push alerts & Wake-on-LAN
+│   └── README.md     Web Hub setup & phone notifications guide
+├── tests/            offline unit tests (photo frame + VPN + Web Hub)
 ├── install.sh        Raspberry Pi photo frame setup script
 ├── pyproject.toml
 └── LICENSE
@@ -72,8 +78,8 @@ python photoframe/photoframe.py --preview /tmp/frame.png --offline
 open /tmp/frame.png
 
 # Run the app tests and linter
-python -m pytest tests/test_photoframe.py tests/test_vpn.py -q
-ruff check photoframe vpn tests/test_photoframe.py tests/test_vpn.py
+python -m pytest tests/test_photoframe.py tests/test_vpn.py tests/test_webui.py -q
+ruff check photoframe vpn webui tests/test_photoframe.py tests/test_vpn.py tests/test_webui.py
 ```
 
 Notes:
@@ -328,6 +334,21 @@ sudo rp-vpn benchmark
 See **[vpn/README.md](vpn/README.md)** for full details on multi-config
 management, automatic UK failover, and getting the full **500 Mbps** on
 Raspberry Pi 4.
+
+## Web Hub: Phone Photo Uploader, Watchdog & Wake-on-LAN
+
+Install the mobile-friendly Web Hub to upload/crop photos straight from your
+phone's camera roll, switch Surfshark VPN servers with one tap, track ISP/VPN/LAN
+uptime with phone push alerts (ntfy.sh, Telegram, Pushover, Discord/Slack), and
+send Wake-on-LAN magic packets to sleeping PCs:
+
+```bash
+cd ~/rp-inky
+./webui/install-webui.sh
+# Open http://<pi-ip>:8080 from any phone or computer on your Wi-Fi
+```
+
+See **[webui/README.md](webui/README.md)** for details.
 
 ## License
 

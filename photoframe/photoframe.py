@@ -1019,27 +1019,42 @@ def list_images(image_dir):
     )
 
 
-def choose_next(images, last_name=None):
-    """Pick a random photo, avoiding an immediate repeat."""
+def choose_next(images, last_name=None, requested_name=None, pinned_name=None):
+    """Pick the pinned/requested photo if present, else a random non-repeating photo."""
     if not images:
         return None
+    by_name = {path.name: path for path in images}
+    if pinned_name and pinned_name in by_name:
+        return by_name[pinned_name]
+    if requested_name and requested_name in by_name:
+        return by_name[requested_name]
     candidates = [path for path in images if path.name != last_name]
     if not candidates:
         candidates = images
     return random.choice(candidates)
 
 
+def read_frame_state(state_path):
+    """Read the full state dictionary from state_path."""
+    data = read_json(state_path, {})
+    return data if isinstance(data, dict) else {}
+
+
 def read_last_image(state_path):
     """Read the last displayed image name from the state file."""
-    data = read_json(state_path, {})
-    if isinstance(data, dict) and isinstance(data.get("last_image"), str):
+    data = read_frame_state(state_path)
+    if isinstance(data.get("last_image"), str):
         return data["last_image"]
     return None
 
 
 def write_last_image(state_path, name):
-    """Persist the last displayed image name."""
-    write_json_atomic(state_path, {"last_image": name})
+    """Persist the last displayed image name while preserving any pinned_image."""
+    state = read_frame_state(state_path)
+    new_state = {"last_image": name}
+    if isinstance(state.get("pinned_image"), str) and state["pinned_image"]:
+        new_state["pinned_image"] = state["pinned_image"]
+    write_json_atomic(state_path, new_state)
 
 
 def fit_photo(path):
@@ -1202,22 +1217,47 @@ def show_frame(display, frame, config):
     display.show()
 
 
-def _install_signal_handlers(stop_event):
-    def handler(signum, _frame):
+def _install_signal_handlers(stop_event, refresh_event=None):
+    def stop_handler(signum, _frame):
         LOG.info("Received signal %s; stopping after this cycle", signum)
         stop_event.set()
+        if refresh_event is not None:
+            refresh_event.set()
+
+    def refresh_handler(signum, _frame):
+        LOG.info("Received signal %s; refreshing frame immediately", signum)
+        if refresh_event is not None:
+            refresh_event.set()
 
     for signum in (signal.SIGTERM, signal.SIGINT):
         with suppress(OSError, ValueError):
-            signal.signal(signum, handler)
+            signal.signal(signum, stop_handler)
+    if hasattr(signal, "SIGUSR1") and refresh_event is not None:
+        with suppress(OSError, ValueError):
+            signal.signal(signal.SIGUSR1, refresh_handler)
 
 
-def _wait_until(deadline, stop_event):
+def _wait_until(deadline, stop_event, refresh_event=None):
     while not stop_event.is_set():
+        if refresh_event is not None and refresh_event.is_set():
+            refresh_event.clear()
+            return
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return
-        stop_event.wait(min(remaining, 30.0))
+        if refresh_event is not None:
+            refresh_event.wait(min(remaining, 5.0))
+        else:
+            stop_event.wait(min(remaining, 30.0))
+
+
+def _save_latest_preview(state_dir, frame):
+    """Save an atomic PNG copy of the rendered frame for the local Web UI."""
+    preview_path = Path(state_dir) / "latest_preview.png"
+    preview_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = preview_path.with_name("latest_preview.tmp.png")
+    frame.save(tmp_path, "PNG")
+    os.replace(tmp_path, preview_path)
 
 
 def run_cycle(config, args, fonts, resolver, display):
@@ -1225,7 +1265,13 @@ def run_cycle(config, args, fonts, resolver, display):
     images = list_images(config["_image_dir"])
     LOG.info("Found %d photo(s) in %s", len(images), config["_image_dir"])
     state_path = config["_state_dir"] / "state.json"
-    photo = choose_next(images, read_last_image(state_path))
+    state = read_frame_state(state_path)
+    photo = choose_next(
+        images,
+        last_name=state.get("last_image") if isinstance(state.get("last_image"), str) else None,
+        requested_name=state.get("next_image") if isinstance(state.get("next_image"), str) else None,
+        pinned_name=state.get("pinned_image") if isinstance(state.get("pinned_image"), str) else None,
+    )
 
     meta = PhotoMeta()
     if photo is not None:
@@ -1242,6 +1288,8 @@ def run_cycle(config, args, fonts, resolver, display):
         LOG.info("Preview written to %s (%dx%d)", output, frame.width, frame.height)
         return
 
+    with suppress(OSError):
+        _save_latest_preview(config["_state_dir"], frame)
     show_frame(display, frame, config)
     if photo is not None:
         try:
@@ -1268,10 +1316,12 @@ def run(args):
 
     display = None if args.preview else init_display()
     stop_event = threading.Event()
-    _install_signal_handlers(stop_event)
+    refresh_event = threading.Event()
+    _install_signal_handlers(stop_event, refresh_event=refresh_event)
     interval = float(config["refresh_minutes"]) * 60.0
 
     while not stop_event.is_set():
+        refresh_event.clear()
         cycle_start = time.monotonic()
         try:
             run_cycle(config, args, fonts, resolver, display)
@@ -1283,7 +1333,7 @@ def run(args):
         if args.once or args.preview:
             return 0
 
-        _wait_until(cycle_start + interval, stop_event)
+        _wait_until(cycle_start + interval, stop_event, refresh_event=refresh_event)
     return 0
 
 

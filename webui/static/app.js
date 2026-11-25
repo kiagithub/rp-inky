@@ -1,0 +1,671 @@
+(() => {
+  let savedPin = localStorage.getItem("rp_inky_pin") || "";
+  let benchPollTimer = null;
+
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+  function showToast(msg, isError = false) {
+    const el = $("#toast");
+    el.textContent = msg;
+    el.style.borderColor = isError ? "#ef4444" : "#38bdf8";
+    el.classList.remove("hidden");
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => el.classList.add("hidden"), 3800);
+  }
+
+  function esc(val) {
+    const d = document.createElement("div");
+    d.textContent = val == null ? "" : String(val);
+    return d.innerHTML;
+  }
+
+  async function api(path, opts = {}) {
+    const headers = Object.assign({ "X-Requested-With": "rp-inky" }, opts.headers || {});
+    if (savedPin) headers["X-Pin"] = savedPin;
+    if (opts.json !== undefined) {
+      headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(opts.json);
+    }
+    const resp = await fetch(path, Object.assign({}, opts, { headers }));
+    if (resp.status === 401) {
+      $("#pin-modal").classList.remove("hidden");
+      throw new Error("PIN required");
+    }
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    }
+    return data;
+  }
+
+  // -------------------- Tabs & Auth --------------------
+  $$(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      $$(".tab").forEach((b) => b.classList.remove("active"));
+      $$(".tab-panel").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      $(`#tab-${btn.dataset.tab}`).classList.add("active");
+      if (btn.dataset.tab === "vpn") loadVpnStatus();
+      if (btn.dataset.tab === "monitor") loadMonitor();
+      if (btn.dataset.tab === "wol") loadWol();
+    });
+  });
+
+  $("#pin-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    savedPin = $("#pin-input").value.trim();
+    localStorage.setItem("rp_inky_pin", savedPin);
+    $("#pin-modal").classList.add("hidden");
+    refreshAll();
+  });
+
+  // -------------------- Tab 1: Photos & Cropper --------------------
+  function refreshPreviewImage(photoName = "") {
+    const q = photoName ? `?photo=${encodeURIComponent(photoName)}&t=${Date.now()}` : `?t=${Date.now()}`;
+    $("#frame-preview-img").src = `/api/frame/preview${q}`;
+  }
+
+  const photoInput = $("#photo-input");
+  const cropX = $("#crop-x");
+  const cropY = $("#crop-y");
+  const cropImg = $("#crop-preview-img");
+
+  function updateCropPreviewPos() {
+    const px = Math.round(parseFloat(cropX.value) * 100);
+    const py = Math.round(parseFloat(cropY.value) * 100);
+    cropImg.style.objectPosition = `${px}% ${py}%`;
+  }
+  cropX.addEventListener("input", updateCropPreviewPos);
+  cropY.addEventListener("input", updateCropPreviewPos);
+
+  photoInput.addEventListener("change", () => {
+    const files = photoInput.files;
+    if (!files || !files.length) {
+      $("#crop-box-wrap").classList.add("hidden");
+      $("#file-drop-label").textContent = "Tap to select photo(s) from Camera Roll";
+      return;
+    }
+    $("#file-drop-label").textContent =
+      files.length === 1 ? `Selected: ${files[0].name}` : `Selected ${files.length} photos`;
+    const first = files[0];
+    if (first.type.startsWith("image/")) {
+      cropImg.src = URL.createObjectURL(first);
+      cropX.value = "0.5";
+      cropY.value = "0.5";
+      updateCropPreviewPos();
+      $("#crop-box-wrap").classList.remove("hidden");
+    } else {
+      $("#crop-box-wrap").classList.add("hidden");
+    }
+  });
+
+  $("#upload-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const files = photoInput.files;
+    if (!files || !files.length) return;
+    const fd = new FormData();
+    for (const f of files) fd.append("photos", f);
+    fd.append("center_x", cropX.value);
+    fd.append("center_y", cropY.value);
+    fd.append("location", $("#upload-location").value.trim());
+    fd.append("date", $("#upload-date").value.trim());
+    fd.append("show_now", $("#upload-show-now").checked ? "1" : "0");
+
+    const btn = $("#btn-upload");
+    btn.disabled = true;
+    btn.textContent = "Uploading & Cropping…";
+    try {
+      const res = await api("/api/photos/upload", { method: "POST", body: fd });
+      showToast(`Uploaded ${res.count} photo(s)!`);
+      $("#upload-form").reset();
+      $("#crop-box-wrap").classList.add("hidden");
+      $("#file-drop-label").textContent = "Tap to select photo(s) from Camera Roll";
+      await loadGallery();
+      if (res.uploaded && res.uploaded.length) {
+        refreshPreviewImage(res.uploaded[res.uploaded.length - 1].name);
+      }
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Upload & Crop to 480×800";
+    }
+  });
+
+  async function loadGallery() {
+    const data = await api("/api/photos");
+    $("#album-count").textContent = data.count;
+    const unpinBtn = $("#btn-unpin-photo");
+    if (data.pinned_image) {
+      unpinBtn.classList.remove("hidden");
+      $("#frame-caption").textContent = `Pinned: ${data.pinned_image}`;
+    } else {
+      unpinBtn.classList.add("hidden");
+      $("#frame-caption").textContent = data.current_image
+        ? `Showing: ${data.current_image} (rotates every ${data.refresh_minutes}m)`
+        : "No photo displayed yet";
+    }
+
+    const grid = $("#gallery-grid");
+    if (!data.photos.length) {
+      grid.innerHTML = `<p class="muted">No photos in album yet. Upload from your phone above!</p>`;
+      return;
+    }
+    grid.innerHTML = data.photos
+      .map((p) => {
+        const badges = [
+          p.is_current ? `<span class="pill pill-ok">On Screen</span>` : "",
+          p.is_pinned ? `<span class="pill pill-neutral">Pinned</span>` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return `
+        <div class="photo-card">
+          <img src="/api/photos/file/${encodeURIComponent(p.name)}?v=${p.modified_at}" loading="lazy" alt="${esc(p.name)}">
+          <div class="photo-meta">
+            <div class="photo-title" title="${esc(p.name)}">${esc(p.place || p.name)}</div>
+            <div class="photo-sub">${esc(p.date_display || "")} ${badges}</div>
+            <div class="photo-actions">
+              <button class="btn btn-primary btn-sm" data-photo-act="show" data-name="${esc(p.name)}">Show</button>
+              <button class="btn btn-ghost btn-sm" data-photo-act="pin" data-name="${esc(p.name)}">Pin</button>
+              <button class="btn btn-ghost btn-sm" data-photo-act="edit" data-name="${esc(p.name)}" data-loc="${esc(p.sidecar_location || p.place)}" data-date="${esc(p.sidecar_date || p.date)}">Caption</button>
+              <button class="btn btn-danger btn-sm" data-photo-act="delete" data-name="${esc(p.name)}">Delete</button>
+            </div>
+          </div>
+        </div>`;
+      })
+      .join("");
+
+    grid.querySelectorAll("button[data-photo-act]").forEach((btn) => {
+      btn.addEventListener("click", () => handlePhotoAction(btn));
+    });
+  }
+
+  async function handlePhotoAction(btn) {
+    const act = btn.dataset.photoAct;
+    const name = btn.dataset.name;
+    if (act === "edit") {
+      $("#meta-photo-name").value = name;
+      $("#meta-location").value = btn.dataset.loc || "";
+      $("#meta-date").value = btn.dataset.date || "";
+      $("#meta-modal").classList.remove("hidden");
+      return;
+    }
+    if (act === "delete") {
+      if (!confirm(`Delete ${name} from the photo frame?`)) return;
+      await api("/api/photos/delete", { method: "POST", json: { name } });
+      showToast(`Deleted ${name}`);
+      await loadGallery();
+      refreshPreviewImage();
+      return;
+    }
+    await api("/api/frame/action", { method: "POST", json: { action: act, name } });
+    showToast(act === "pin" ? `Pinned ${name} to frame` : `Refreshing frame with ${name}…`);
+    refreshPreviewImage(name);
+    setTimeout(loadGallery, 1200);
+  }
+
+  $("#btn-next-photo").addEventListener("click", async () => {
+    await api("/api/frame/action", { method: "POST", json: { action: "next" } });
+    showToast("Triggered random photo refresh on e-ink panel!");
+    setTimeout(() => {
+      loadGallery();
+      refreshPreviewImage();
+    }, 1500);
+  });
+
+  $("#btn-unpin-photo").addEventListener("click", async () => {
+    await api("/api/frame/action", { method: "POST", json: { action: "unpin" } });
+    showToast("Unpinned photo; 20m rotation resumed.");
+    loadGallery();
+  });
+
+  $("#btn-refresh-gallery").addEventListener("click", () => {
+    loadGallery();
+    refreshPreviewImage();
+  });
+
+  $("#btn-close-meta").addEventListener("click", () => $("#meta-modal").classList.add("hidden"));
+  $("#meta-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await api("/api/photos/metadata", {
+      method: "POST",
+      json: {
+        name: $("#meta-photo-name").value,
+        location: $("#meta-location").value,
+        date: $("#meta-date").value,
+      },
+    });
+    $("#meta-modal").classList.add("hidden");
+    showToast("Saved photo caption!");
+    loadGallery();
+    refreshPreviewImage($("#meta-photo-name").value);
+  });
+
+  // -------------------- Tab 2: UK VPN --------------------
+  async function loadVpnStatus(refreshExit = false) {
+    const s = await api(`/api/vpn/status${refreshExit ? "?refresh=1" : ""}`);
+    const pill = $("#pill-vpn");
+    const badge = $("#vpn-state-badge");
+
+    if (s.connected) {
+      const loc = s.exit_city ? `${s.exit_city}, ${s.exit_country}` : s.active_profile;
+      pill.textContent = `VPN: ${s.active_profile} (${loc})`;
+      pill.className = "pill pill-ok";
+      badge.textContent = "CONNECTED";
+      badge.className = "pill pill-ok";
+    } else {
+      pill.textContent = "VPN: DOWN";
+      pill.className = "pill pill-bad";
+      badge.textContent = "DISCONNECTED";
+      badge.className = "pill pill-bad";
+    }
+
+    const hs = s.handshake_age_seconds != null ? `${s.handshake_age_seconds}s ago` : "—";
+    const ap = s.hotspot || {};
+    $("#vpn-kv").innerHTML = `
+      <div class="kv-item"><span>Active Profile</span><strong>${esc(s.active_profile || "None")}</strong></div>
+      <div class="kv-item"><span>Public Exit IP</span><strong>${esc(s.exit_ip || "—")} ${esc(s.exit_country ? `(${s.exit_city}, ${s.exit_country})` : "")}</strong></div>
+      <div class="kv-item"><span>Tunnel (${esc(s.tunnel_interface || "wg-vpn")})</span><strong>${esc(s.tunnel_ip || "down")} • HS ${esc(hs)}</strong></div>
+      <div class="kv-item"><span>Tunnel Traffic</span><strong>↓ ${esc(s.rx_human)} / ↑ ${esc(s.tx_human)}</strong></div>
+      <div class="kv-item"><span>5GHz Hotspot (${esc(ap.ssid || "-")})</span><strong>${ap.clients || 0} client(s) ${ap.phy_rate ? `• ${esc(ap.phy_rate)}` : ""}</strong></div>
+      <div class="kv-item"><span>500M LAN Gateway</span><strong>${esc(s.lan_gateway_ip || s.wan_ip || "—")}</strong></div>
+    `;
+
+    $("#bench-wan-iface").textContent = s.wan_interface || "eth0";
+    $("#bench-vpn-iface").textContent = s.tunnel_interface || "wg-vpn";
+    renderBenchmark(s.benchmark || {});
+
+    const pList = $("#vpn-profiles-list");
+    if (!s.profiles.length) {
+      pList.innerHTML = `<p class="muted">No profiles imported yet. Upload Surfshark .conf / .ovpn files above.</p>`;
+    } else {
+      pList.innerHTML = s.profiles
+        .map(
+          (p) => `
+        <div class="profile-card ${p.active ? "active" : ""}">
+          <div>
+            <strong>${esc(p.name)}</strong>
+            <div class="muted small">${esc(p.protocol)} • ${esc(p.country || "?")}</div>
+          </div>
+          <button class="btn ${p.active ? "btn-ghost" : "btn-primary"} btn-sm" data-switch-prof="${esc(p.name)}">
+            ${p.active ? "Active" : "Connect"}
+          </button>
+        </div>`
+        )
+        .join("");
+      pList.querySelectorAll("button[data-switch-prof]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const prof = btn.dataset.switchProf;
+          btn.disabled = true;
+          btn.textContent = "Switching…";
+          try {
+            await api("/api/vpn/switch", { method: "POST", json: { profile: prof } });
+            showToast(`Switched VPN to ${prof}!`);
+            await loadVpnStatus(true);
+          } catch (err) {
+            showToast(err.message, true);
+            await loadVpnStatus();
+          }
+        });
+      });
+    }
+  }
+
+  function renderBenchmark(b) {
+    const btn = $("#btn-run-bench");
+    if (b.running) {
+      btn.disabled = true;
+      btn.textContent = "Testing 25 MB…";
+      $("#bench-meta").textContent = "Downloading test payload over WAN and Surfshark tunnel…";
+      if (!benchPollTimer) {
+        benchPollTimer = setInterval(async () => {
+          const s = await api("/api/vpn/status");
+          renderBenchmark(s.benchmark || {});
+          if (!(s.benchmark || {}).running) {
+            clearInterval(benchPollTimer);
+            benchPollTimer = null;
+          }
+        }, 2000);
+      }
+      return;
+    }
+    btn.disabled = false;
+    btn.textContent = "Run Speed Test";
+    $("#bench-wan-val").textContent = b.wan_mbps != null ? `${b.wan_mbps} Mbps` : "—";
+    $("#bench-vpn-val").textContent =
+      b.vpn_mbps != null ? `${b.vpn_mbps} Mbps ${b.exit_location ? `[${b.exit_location}]` : ""}` : "—";
+    $("#bench-meta").textContent = b.error ? `Error: ${b.error}` : b.updated_at ? `Last tested: ${b.updated_at}` : "";
+  }
+
+  $$("button[data-vpn-action]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const act = btn.dataset.vpnAction;
+      btn.disabled = true;
+      try {
+        await api("/api/vpn/action", { method: "POST", json: { action: act } });
+        showToast(`VPN ${act} completed.`);
+        await loadVpnStatus(true);
+      } catch (err) {
+        showToast(err.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  $("#btn-run-bench").addEventListener("click", async () => {
+    try {
+      const b = await api("/api/vpn/benchmark", { method: "POST", json: { megabytes: 25 } });
+      renderBenchmark(b);
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+
+  $("#vpn-upload-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const files = $("#vpn-file-input").files;
+    if (!files || !files.length) return;
+    const fd = new FormData();
+    for (const f of files) fd.append("profiles", f);
+    try {
+      await api("/api/vpn/upload", { method: "POST", body: fd });
+      showToast(`Imported ${files.length} VPN profile(s)!`);
+      $("#vpn-upload-form").reset();
+      loadVpnStatus();
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+
+  // -------------------- Tab 3: Watchdog & Uptime --------------------
+  $("#mon-type").addEventListener("change", () => {
+    $("#mon-port-wrap").classList.toggle("hidden", $("#mon-type").value !== "tcp");
+  });
+
+  async function loadMonitor() {
+    const snap = await api("/api/monitor/status");
+    const wanTarget = (snap.targets || []).find((t) => t.id === "isp-wan");
+    if (wanTarget && wanTarget.up !== null) {
+      const wanPill = $("#pill-wan");
+      wanPill.textContent = wanTarget.up
+        ? `ISP: ${wanTarget.latency_ms != null ? `${wanTarget.latency_ms} ms` : "UP"}`
+        : "ISP: DOWN";
+      wanPill.className = wanTarget.up ? "pill pill-ok" : "pill pill-bad";
+    }
+
+    const listEl = $("#monitor-list");
+    listEl.innerHTML = (snap.targets || [])
+      .map((t) => {
+        const badgeCls = t.up === true ? "pill-ok" : t.up === false ? "pill-bad" : "pill-neutral";
+        const badgeTxt = t.up === true ? `${t.latency_ms ?? 0} ms` : t.up === false ? "DOWN" : "PENDING";
+        const hist = t.history || [];
+        const padded = Array(Math.max(0, 40 - hist.length))
+          .fill(null)
+          .concat(hist.slice(-40));
+        const bars = padded
+          .map((h) => {
+            if (!h) return `<span class="hb-bar"></span>`;
+            const cls = h.up ? "up" : "down";
+            const tip = `${h.t} — ${h.up ? `${h.ms} ms` : "DOWN"}`;
+            return `<span class="hb-bar ${cls}" title="${esc(tip)}"></span>`;
+          })
+          .join("");
+        const delBtn = t.builtin
+          ? ""
+          : `<button class="btn btn-danger btn-sm" data-del-mon="${esc(t.id)}">Remove</button>`;
+        return `
+        <div class="monitor-row">
+          <div class="monitor-top">
+            <div>
+              <strong>${esc(t.name)}</strong>
+              <span class="muted small">(${esc(t.type)}: ${esc(t.host)}${t.port ? `:${t.port}` : ""})</span>
+            </div>
+            <div class="btn-row">
+              <span class="muted small">${t.uptime_pct != null ? `${t.uptime_pct}% uptime` : ""}</span>
+              <span class="pill ${badgeCls}">${esc(badgeTxt)}</span>
+              ${delBtn}
+            </div>
+          </div>
+          <div class="heartbeat-bars">${bars}</div>
+        </div>`;
+      })
+      .join("");
+
+    listEl.querySelectorAll("button[data-del-mon]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await api("/api/monitor/targets/delete", { method: "POST", json: { id: btn.dataset.delMon } });
+        loadMonitor();
+      });
+    });
+
+    const incEl = $("#incidents-list");
+    if (snap.incidents && snap.incidents.length) {
+      incEl.innerHTML = snap.incidents
+        .map((inc) => `<div><strong>[${esc(inc.status.toUpperCase())}]</strong> ${esc(inc.summary)} <span class="muted">(${esc(inc.at)})</span></div>`)
+        .join("");
+    } else {
+      incEl.textContent = "No outages recorded.";
+    }
+
+    const n = snap.notifications || {};
+    if (n.ntfy) {
+      $("#ntfy-enabled").checked = !!n.ntfy.enabled;
+      $("#ntfy-server").value = n.ntfy.server || "https://ntfy.sh";
+      $("#ntfy-topic").value = n.ntfy.topic || "";
+    }
+    if (n.telegram) {
+      $("#tg-enabled").checked = !!n.telegram.enabled;
+      $("#tg-chat").value = n.telegram.chat_id || "";
+      $("#tg-token").placeholder = n.telegram.bot_token_masked
+        ? `Saved (${n.telegram.bot_token_masked})`
+        : "Bot Token";
+    }
+    if (n.pushover) {
+      $("#po-enabled").checked = !!n.pushover.enabled;
+      $("#po-user").value = n.pushover.user_key || "";
+      $("#po-token").placeholder = n.pushover.app_token_masked ? "Saved (***)" : "App Token";
+    }
+    if (n.webhook) {
+      $("#wh-enabled").checked = !!n.webhook.enabled;
+      $("#wh-url").value = n.webhook.url || "";
+    }
+  }
+
+  $("#btn-check-now").addEventListener("click", async () => {
+    const btn = $("#btn-check-now");
+    btn.disabled = true;
+    btn.textContent = "Probing…";
+    try {
+      await api("/api/monitor/check", { method: "POST", json: {} });
+      await loadMonitor();
+      showToast("Completed health probes!");
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Probe All Now";
+    }
+  });
+
+  $("#add-monitor-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/monitor/targets/add", {
+        method: "POST",
+        json: {
+          name: $("#mon-name").value,
+          type: $("#mon-type").value,
+          host: $("#mon-host").value,
+          port: parseInt($("#mon-port").value || "80", 10),
+        },
+      });
+      $("#add-monitor-form").reset();
+      $("#mon-port-wrap").classList.add("hidden");
+      showToast("Added monitor target!");
+      setTimeout(loadMonitor, 800);
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+
+  $("#notif-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/monitor/notifications", {
+        method: "POST",
+        json: {
+          ntfy: {
+            enabled: $("#ntfy-enabled").checked,
+            server: $("#ntfy-server").value,
+            topic: $("#ntfy-topic").value,
+          },
+          telegram: {
+            enabled: $("#tg-enabled").checked,
+            bot_token: $("#tg-token").value,
+            chat_id: $("#tg-chat").value,
+          },
+          pushover: {
+            enabled: $("#po-enabled").checked,
+            app_token: $("#po-token").value,
+            user_key: $("#po-user").value,
+          },
+          webhook: {
+            enabled: $("#wh-enabled").checked,
+            url: $("#wh-url").value,
+          },
+        },
+      });
+      $("#tg-token").value = "";
+      $("#po-token").value = "";
+      showToast("Saved push notification settings!");
+      loadMonitor();
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+
+  $("#btn-test-alert").addEventListener("click", async () => {
+    try {
+      await api("/api/monitor/notifications/test", { method: "POST", json: {} });
+      showToast("Test notification sent to your phone!");
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+
+  // -------------------- Tab 4: Wake-on-LAN --------------------
+  async function loadWol() {
+    const data = await api("/api/wol/devices?ping=1");
+    const el = $("#wol-list");
+    if (!data.devices.length) {
+      el.innerHTML = `<p class="muted">No saved Wake-on-LAN devices yet. Add one or scan LAN on the right.</p>`;
+      return;
+    }
+    el.innerHTML = data.devices
+      .map((d) => {
+        const statusPill =
+          d.awake === true
+            ? `<span class="pill pill-ok">Awake</span>`
+            : d.awake === false
+            ? `<span class="pill pill-neutral">Asleep</span>`
+            : "";
+        return `
+        <div class="wol-item">
+          <div>
+            <strong>${esc(d.name)}</strong> ${statusPill}
+            <div class="muted small"><code>${esc(d.mac)}</code> ${d.ip ? `• ${esc(d.ip)}` : ""}</div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary btn-sm" data-wake-id="${esc(d.id)}" data-wake-name="${esc(d.name)}">⚡ Wake</button>
+            <button class="btn btn-danger btn-sm" data-del-wol="${esc(d.id)}">✕</button>
+          </div>
+        </div>`;
+      })
+      .join("");
+
+    el.querySelectorAll("button[data-wake-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          const res = await api("/api/wol/wake", { method: "POST", json: { id: btn.dataset.wakeId } });
+          showToast(`Magic packet sent to ${btn.dataset.wakeName} (${res.woken})!`);
+        } catch (err) {
+          showToast(err.message, true);
+        }
+      });
+    });
+
+    el.querySelectorAll("button[data-del-wol]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await api("/api/wol/delete", { method: "POST", json: { id: btn.dataset.delWol } });
+        loadWol();
+      });
+    });
+  }
+
+  $("#wol-add-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/wol/add", {
+        method: "POST",
+        json: {
+          name: $("#wol-name").value,
+          mac: $("#wol-mac").value,
+          ip: $("#wol-ip").value,
+        },
+      });
+      $("#wol-add-form").reset();
+      showToast("Saved Wake-on-LAN device!");
+      loadWol();
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+
+  $("#btn-refresh-wol").addEventListener("click", loadWol);
+  $("#btn-scan-lan").addEventListener("click", async () => {
+    const list = $("#lan-scan-list");
+    list.textContent = "Scanning ARP neighbors…";
+    try {
+      const data = await api("/api/wol/scan");
+      if (!data.neighbors.length) {
+        list.textContent = "No ARP neighbors found yet.";
+        return;
+      }
+      list.innerHTML = data.neighbors
+        .map(
+          (n) => `
+        <div class="wol-item">
+          <div><strong>${esc(n.ip)}</strong> — <code>${esc(n.mac)}</code></div>
+          <button type="button" class="btn btn-ghost btn-sm" data-pick-ip="${esc(n.ip)}" data-pick-mac="${esc(n.mac)}">Use</button>
+        </div>`
+        )
+        .join("");
+      list.querySelectorAll("button[data-pick-mac]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          $("#wol-mac").value = btn.dataset.pickMac;
+          $("#wol-ip").value = btn.dataset.pickIp;
+          if (!$("#wol-name").value) $("#wol-name").value = `Device ${btn.dataset.pickIp}`;
+        });
+      });
+    } catch (err) {
+      list.textContent = err.message;
+    }
+  });
+
+  async function refreshAll() {
+    try {
+      await Promise.all([loadGallery(), loadVpnStatus(), loadMonitor()]);
+    } catch (_err) {
+      // Handled by api()
+    }
+  }
+
+  refreshAll();
+  setInterval(() => {
+    loadVpnStatus().catch(() => {});
+    loadMonitor().catch(() => {});
+  }, 15000);
+})();
