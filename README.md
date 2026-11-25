@@ -2,9 +2,9 @@
 
 A multi-purpose Raspberry Pi 4 appliance combining:
 
-1. **E-ink digital photo frame** for the **Inky Impression 7.3" (PIM773)** (`photoframe/`).
+1. **E-ink digital photo frame & Weather/Quote dashboard** for the **Inky Impression 7.3" (PIM773)** (`photoframe/`).
 2. **Always-On high-speed Surfshark UK VPN & 5 GHz Wi-Fi Hotspot** with multi-profile WireGuard/OpenVPN switching, leak-proof `nftables` kill-switch, automatic UK failover, and 500+ Mbps LAN gateway support (`vpn/`).
-3. **Mobile Web Hub, Phone Photo Uploader, Uptime Watchdog & Wake-on-LAN** (`webui/`) at `http://<pi-ip>:8080`.
+3. **Mobile Web Hub** (`webui/`) at `http://<pi-ip>:8080` — Phone Photo Uploader, 1-Tap UK VPN, Home Network & Bandwidth Scanner with New-Device Alerts, Pi System Health Bar, Uptime Watchdog & Wake-on-LAN.
 
 The panel is mounted in portrait: photos are composed at **480 × 800**, rotated
 to the panel's native 800 × 480 size, and changed every **20 minutes**. A new
@@ -34,8 +34,9 @@ overlaid on the bottom of each photo shows:
 ```text
 rp-inky/
 ├── inky/             driver package (vendored, MIT)
-├── photoframe/       the photo frame application
+├── photoframe/       the photo frame & weather/quote dashboard application
 │   ├── image/        your 480x800 photos
+│   ├── dashboard.py  high-contrast Spectra 6 Weather, Rain Chance & editorial Quote/Fact card
 │   ├── config.json   settings; defaults to McLean, Virginia, US
 │   └── README.md     full photo frame configuration and operation guide
 ├── vpn/              always-on Surfshark UK VPN, hotspot & profile switcher
@@ -43,11 +44,13 @@ rp-inky/
 │   ├── config.json   VPN & 5 GHz hotspot defaults
 │   ├── profiles/     imported WireGuard (.conf) & OpenVPN (.ovpn) configs (git-ignored)
 │   └── README.md     500 Mbps setup, multi-config switching & troubleshooting
-├── webui/            mobile Web Hub (photo uploader, 1-tap VPN, watchdog & Wake-on-LAN)
+├── webui/            mobile Web Hub (photos, 1-tap VPN, network scanner, health, watchdog & WoL)
 │   ├── server.py     HTTP server & REST API (default port 8080)
 │   ├── photos.py     camera-roll 480x800 crop uploader & instant frame trigger
-│   ├── monitor.py    ISP/VPN/LAN uptime monitor, push alerts & Wake-on-LAN
-│   └── README.md     Web Hub setup & phone notifications guide
+│   ├── network.py    LAN/Hotspot device scanner, OUI/mDNS fingerprinting, live bandwidth & new-device alerts
+│   ├── system_health.py Pi CPU temp, RAM, SD card & power/thermal throttling telemetry
+│   ├── monitor.py    ISP/VPN/LAN/System uptime monitor, push alerts & Wake-on-LAN
+│   └── README.md     Web Hub setup, network scanner & phone notifications guide
 ├── tests/            offline unit tests (photo frame + VPN + Web Hub)
 ├── install.sh        Raspberry Pi photo frame setup script
 ├── pyproject.toml

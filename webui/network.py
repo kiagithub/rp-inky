@@ -615,10 +615,14 @@ class NetworkScanner:
         webui_config_getter: Callable[[], dict[str, Any]],
         local_config_updater: Callable[[dict[str, Any]], Path],
         vpn_config_path: Path,
+        state_dir: Optional[Path] = None,
+        on_new_devices: Optional[Callable[[list[dict[str, Any]]], None]] = None,
     ):
         self._get_webui_cfg = webui_config_getter
         self._update_local_cfg = local_config_updater
         self._vpn_config_path = Path(vpn_config_path).expanduser().resolve()
+        self._known_path = (Path(state_dir).expanduser().resolve() / "known_devices.json") if state_dir else None
+        self._on_new_devices = on_new_devices
 
         self._lock = threading.Lock()
         self._prev_client_bytes: dict[str, tuple[float, int, int]] = {}
@@ -628,6 +632,65 @@ class NetworkScanner:
         self._rdns_cache: dict[str, tuple[float, str]] = {}
         self._last_snapshot: Optional[dict[str, Any]] = None
         self._last_scan_mono: float = 0.0
+        self._known_state: dict[str, Any] = self._load_known_state()
+
+    def _load_known_state(self) -> dict[str, Any]:
+        if self._known_path and self._known_path.is_file():
+            raw = vm.read_json(self._known_path, {})
+            if isinstance(raw, dict) and isinstance(raw.get("devices"), dict):
+                return {"initialized": bool(raw.get("initialized", True)), "devices": dict(raw["devices"])}
+        return {"initialized": False, "devices": {}}
+
+    def _save_known_state(self) -> None:
+        if not self._known_path:
+            return
+        with self._lock:
+            payload = {
+                "initialized": bool(self._known_state.get("initialized", False)),
+                "devices": dict(self._known_state.get("devices") or {}),
+            }
+        with suppress(OSError):
+            self._known_path.parent.mkdir(parents=True, exist_ok=True)
+            vm.write_json_atomic(self._known_path, payload, mode=0o600)
+
+    def _alert_new_devices_enabled(self) -> bool:
+        cfg = self._get_webui_cfg()
+        return bool((cfg.get("network") or {}).get("alert_new_devices", True))
+
+    def trust_device(self, mac: str = "", trust_all: bool = False) -> dict[str, Any]:
+        """Mark one MAC address or all currently known devices as trusted (clears NEW badge)."""
+        changed = False
+        with self._lock:
+            known_devs: dict[str, Any] = self._known_state.setdefault("devices", {})
+            if trust_all:
+                for rec in known_devs.values():
+                    if isinstance(rec, dict) and not rec.get("trusted", False):
+                        rec["trusted"] = True
+                        changed = True
+            else:
+                norm = wm.normalize_mac(mac)
+                rec = known_devs.setdefault(
+                    norm,
+                    {
+                        "first_seen": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        "last_seen": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        "trusted": True,
+                    },
+                )
+                if not rec.get("trusted", False):
+                    rec["trusted"] = True
+                    changed = True
+            if changed:
+                self._known_state["initialized"] = True
+        if changed:
+            self._save_known_state()
+        return self.scan(active_sweep=False)
+
+    def update_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Update network alert settings in webui/config.local.json."""
+        if "alert_new_devices" in payload:
+            self._update_local_cfg({"network": {"alert_new_devices": bool(payload["alert_new_devices"])}})
+        return self.scan(active_sweep=False)
 
     def _get_aliases(self) -> dict[str, dict[str, str]]:
         cfg = self._get_webui_cfg()
@@ -966,16 +1029,82 @@ class NetworkScanner:
             return (net_rank, 0 if dev["online"] else 1, ip_tuple)
 
         devices = sorted(devices_by_mac.values(), key=_sort_key)
+        now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+        # Update known-device registry & detect brand-new unknown MAC addresses
+        newly_discovered: list[dict[str, Any]] = []
+        known_dirty = False
+        with self._lock:
+            known_devs: dict[str, Any] = self._known_state.setdefault("devices", {})
+            initialized = bool(self._known_state.get("initialized", False))
+            if not initialized and devices:
+                # First-run baseline: mark all currently present devices as trusted to avoid alert spam
+                for dev in devices:
+                    known_devs[dev["mac"]] = {
+                        "first_seen": now_iso,
+                        "last_seen": now_iso,
+                        "last_ip": dev["ip"],
+                        "last_name": dev["name"],
+                        "network": dev["network"],
+                        "trusted": True,
+                    }
+                    dev["trusted"] = True
+                    dev["is_new"] = False
+                    dev["first_seen"] = now_iso
+                self._known_state["initialized"] = True
+                known_dirty = True
+            else:
+                for dev in devices:
+                    mac = dev["mac"]
+                    rec = known_devs.get(mac)
+                    if rec is None:
+                        auto_trust = bool(dev.get("is_self") or dev.get("is_gateway") or dev.get("custom_name"))
+                        rec = {
+                            "first_seen": now_iso,
+                            "last_seen": now_iso,
+                            "last_ip": dev["ip"],
+                            "last_name": dev["name"],
+                            "network": dev["network"],
+                            "trusted": auto_trust,
+                        }
+                        known_devs[mac] = rec
+                        known_dirty = True
+                        if not auto_trust:
+                            newly_discovered.append(dev)
+                    else:
+                        if rec.get("last_ip") != dev["ip"] or rec.get("last_name") != dev["name"]:
+                            rec["last_ip"] = dev["ip"]
+                            rec["last_name"] = dev["name"]
+                            known_dirty = True
+                        rec["last_seen"] = now_iso
+                        if dev.get("custom_name") and not rec.get("trusted"):
+                            rec["trusted"] = True
+                            known_dirty = True
+                    dev["trusted"] = bool(rec.get("trusted", False))
+                    dev["is_new"] = not dev["trusted"]
+                    dev["first_seen"] = str(rec.get("first_seen") or now_iso)
+
+        if known_dirty:
+            self._save_known_state()
+
+        alert_enabled = self._alert_new_devices_enabled()
+        if newly_discovered and alert_enabled and self._on_new_devices:
+            with suppress(Exception):
+                self._on_new_devices(newly_discovered)
+
         hotspot_count = sum(1 for d in devices if d["network"] == "hotspot")
         lan_count = sum(1 for d in devices if d["network"] == "lan")
+        unknown_count = sum(1 for d in devices if d.get("is_new"))
 
         snapshot = {
-            "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "scanned_at": now_iso,
             "active_sweep": active_sweep,
             "summary": {
                 "total_devices": len(devices),
                 "hotspot_devices": hotspot_count,
                 "lan_devices": lan_count,
+                "unknown_devices": unknown_count,
+                "alert_new_devices": alert_enabled,
                 "hotspot_ssid": ap_ssid,
                 "wan_interface": wan_iface,
                 "gateway_ip": gateway_ip,

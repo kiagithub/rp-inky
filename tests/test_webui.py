@@ -11,6 +11,7 @@ from webui import monitor as wm
 from webui import network as wn
 from webui import photos as wp
 from webui import server as ws
+from webui import system_health as sh
 
 
 def _make_jpeg_bytes(size=(1200, 900), color=(40, 120, 200)) -> bytes:
@@ -405,5 +406,125 @@ def test_discover_mdns_hosts_handles_non_utf8_txt_records(monkeypatch):
     parsed = wn.discover_mdns_hosts()
     assert parsed["192.168.86.44"]["friendly"] == "Living Room TV"
     assert "_airplay._tcp" in parsed["192.168.86.44"]["services"]
+
+
+def test_new_device_alerts_baseline_and_trust_workflow(tmp_path, monkeypatch):
+    for sub in ("photoframe", "vpn", "webui"):
+        (tmp_path / sub).mkdir()
+    cfg_path = tmp_path / "webui" / "config.json"
+    cfg_path.write_text(json.dumps({"port": 8080}), encoding="utf-8")
+
+    pushed_alerts = []
+    monkeypatch.setattr(wm, "send_notifications", lambda _cfg, title, msg: (pushed_alerts.append((title, msg)), [])[1])
+    monkeypatch.setattr(wn.vm, "interface_exists", lambda iface: iface == "eth0")
+    monkeypatch.setattr(wn.vm, "get_interface_ipv4", lambda _iface: "192.168.86.30")
+    monkeypatch.setattr(wn.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(wn, "get_default_gateway", lambda _iface="": "192.168.86.1")
+    monkeypatch.setattr(wn, "get_interface_mac", lambda _iface="": "DC:A6:32:AA:BB:CC")
+    monkeypatch.setattr(wn, "reverse_dns_lookup", lambda _ip: "")
+    monkeypatch.setattr(wn, "discover_mdns_hosts", lambda **_kw: {})
+
+    lan_entries = [{"ip": "192.168.86.1", "mac": "30:FD:38:00:00:01", "state": "REACHABLE"}]
+    monkeypatch.setattr(wn.wm, "scan_lan_neighbors", lambda _iface: list(lan_entries))
+
+    ctx = ws.AppContext(cfg_path)
+
+    # 1. First scan baselines existing devices silently (no alert storm)
+    snap1 = ctx.network.scan(active_sweep=False)
+    assert snap1["summary"]["unknown_devices"] == 0
+    assert pushed_alerts == []
+
+    # 2. Brand-new unknown device joins LAN -> triggers [NEW DEVICE] push alert + NEW badge
+    lan_entries.append({"ip": "192.168.86.88", "mac": "50:C7:BF:99:88:77", "state": "REACHABLE"})
+    snap2 = ctx.network.scan(active_sweep=False)
+    assert snap2["summary"]["unknown_devices"] == 1
+    assert len(pushed_alerts) == 1
+    assert pushed_alerts[0][0].startswith("[NEW DEVICE]")
+    new_dev = next(d for d in snap2["devices"] if d["mac"] == "50:C7:BF:99:88:77")
+    assert new_dev["is_new"] is True
+    assert new_dev["trusted"] is False
+
+    # 3. Trust via POST /api/network/trust -> clears NEW badge
+    trust_payload = json.dumps({"mac": "50:C7:BF:99:88:77"}).encode()
+    req = (
+        b"POST /api/network/trust HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        b"X-Requested-With: rp-inky\r\n"
+        + f"Content-Length: {len(trust_payload)}\r\n\r\n".encode()
+        + trust_payload
+    )
+    code, body = _dispatch_http(ctx, req)
+    assert code == 200
+    snap3 = json.loads(body.decode("utf-8"))
+    assert snap3["summary"]["unknown_devices"] == 0
+    trusted_dev = next(d for d in snap3["devices"] if d["mac"] == "50:C7:BF:99:88:77")
+    assert trusted_dev["is_new"] is False
+    assert trusted_dev["trusted"] is True
+
+
+def test_system_health_endpoint_and_watchdog_thermal_disk_alerts(tmp_path, monkeypatch):
+    for sub in ("photoframe", "vpn", "webui"):
+        (tmp_path / sub).mkdir()
+    cfg_path = tmp_path / "webui" / "config.json"
+    cfg_path.write_text(
+        json.dumps(
+            {
+                "monitor": {
+                    "targets": [],
+                    "system_alerts": {"enabled": True, "cpu_temp_c": 80, "disk_pct": 90, "alert_throttling": True},
+                    "notifications": {"ntfy": {"enabled": True, "server": "https://ntfy.sh", "topic": "health"}},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert sh.parse_throttled_mask(0x0)["status"] == "ok"
+    assert sh.parse_throttled_mask(0x50000)["status"] == "warn"
+    assert sh.parse_throttled_mask(0x5)["status"] == "crit"
+
+    alerts = []
+    monkeypatch.setattr(wm, "send_notifications", lambda _cfg, title, msg: (alerts.append((title, msg)), [])[1])
+
+    fake_health = {
+        "status": "crit",
+        "cpu_temp_c": 83.4,
+        "load_1m": 1.25,
+        "uptime_seconds": 3600,
+        "uptime_human": "1h 0m",
+        "memory": {"available": True, "total_mb": 4096, "used_mb": 1024, "pct": 25.0},
+        "disk": {"available": True, "total_gb": 32.0, "used_gb": 29.5, "free_gb": 2.5, "pct": 92.2},
+        "throttled": {"available": True, "mask": "0x1", "status": "crit", "summary": "Undervoltage now", "active": ["Undervoltage now"], "historical": []},
+    }
+    monkeypatch.setattr(wm.sh, "get_system_health", lambda: dict(fake_health))
+    monkeypatch.setattr(ws.sh, "get_system_health", lambda: dict(fake_health))
+
+    ctx = ws.AppContext(cfg_path)
+
+    # HTTP GET /api/system/health returns structured metrics
+    code, body = _dispatch_http(ctx, b"GET /api/system/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+    assert code == 200
+    parsed = json.loads(body.decode("utf-8"))
+    assert parsed["cpu_temp_c"] == 83.4
+    assert parsed["throttled"]["status"] == "crit"
+
+    # Watchdog run_once triggers temp + disk + throttling alerts
+    ctx.monitor.run_once()
+    titles = [t for t, _ in alerts]
+    assert "[ALERT] Pi High CPU Temp" in titles
+    assert "[ALERT] Pi SD Card Nearly Full" in titles
+    assert "[ALERT] Pi Power/Thermal Throttling" in titles
+
+    # Cooling down + freeing space triggers recovery alerts
+    fake_health["cpu_temp_c"] = 62.0
+    fake_health["disk"] = {"available": True, "total_gb": 32.0, "used_gb": 16.0, "free_gb": 16.0, "pct": 50.0}
+    fake_health["throttled"] = {"available": True, "mask": "0x0", "status": "ok", "summary": "OK", "active": [], "historical": []}
+    alerts.clear()
+    ctx.monitor.run_once()
+    rec_titles = [t for t, _ in alerts]
+    assert "[RECOVERED] Pi CPU Temp" in rec_titles
+    assert "[RECOVERED] Pi SD Card" in rec_titles
+    assert "[RECOVERED] Pi Power/Thermal" in rec_titles
 
 

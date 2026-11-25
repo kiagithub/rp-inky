@@ -1,4 +1,4 @@
-# rp-inky Web Hub — Phone Photo Uploader, 1-Tap UK VPN, Uptime Watchdog & Wake-on-LAN
+# rp-inky Web Hub — Photo Frame, UK VPN, Network Scanner, Pi Health, Watchdog & Wake-on-LAN
 
 A lightweight, zero-bloat web control panel (`http://<pi-ip>:8080`) that runs alongside the photo frame and UK VPN on your Raspberry Pi 4 (~12 MB RAM, <1% idle CPU, zero external CDN dependencies so it works even if your ISP is down).
 
@@ -6,24 +6,36 @@ A lightweight, zero-bloat web control panel (`http://<pi-ip>:8080`) that runs al
 
 ## Features
 
-1. **Phone Photo Uploader & Album Manager (`🖼 Photos`)**
+1. **Live Pi System Health Bar (Always Visible)**
+   - Compact live status strip right beneath the top bar showing **CPU temperature (°C)**, **RAM usage**, **SD card free/used space**, **power supply & thermal throttling status** (`vcgencmd get_throttled`), and **uptime + 1-minute load average**.
+   - Color-coded health indicators (green / amber / red) plus automatic **Watchdog phone push alerts** if CPU ≥ 80°C, SD card ≥ 90% full, or active undervoltage/throttling occurs (with automatic recovery alerts).
+
+2. **Phone Photo Uploader, Screen Modes & Album Manager (`🖼 Photos`)**
    - Select one or multiple photos straight from your iPhone/Android camera roll (supports JPEG, PNG, WebP, and iPhone HEIC when `pillow-heif` is installed).
    - Interactive **480 × 800 portrait crop preview** with horizontal/vertical focal-point sliders before uploading.
    - Preserves EXIF capture date & GPS coordinates automatically, with optional custom Place/Date overrides (`metadata.json`).
-   - **1-Tap "Show"** or **"Pin"** on any photo in the gallery triggers an immediate refresh on the e-ink screen via `SIGUSR1` (no SSH or service restart required).
+   - **1-Tap "Show"**, **"Pin"**, **"Weather & Quote"**, or **"New Fact/Quote"** triggers an immediate refresh on the e-ink screen via `SIGUSR1` (no SSH or service restart required).
+   - Switch display modes (`Alternate`, `Weather & Quote Always On`, `Scheduled Hours`, or `Photos Only`) and enter custom notes/quotes up to 300 characters.
 
-2. **1-Tap Surfshark UK VPN Control (`🛡 UK VPN`)**
+3. **1-Tap Surfshark UK VPN Control (`🛡 UK VPN`)**
    - View live tunnel status, public UK exit IP/city, WireGuard handshake age, RX/TX transfer, connected 5 GHz Wi-Fi Hotspot clients + PHY link speed, and your 500M LAN Gateway IP.
    - Switch between imported Surfshark configs (`uk-lon`, `uk-man`, `us-nyc`, etc.) with one tap, upload new `.conf` / `.ovpn` files directly from your browser, or run a live **25 MB WAN vs. VPN speed benchmark**.
 
-3. **ISP, UK VPN & Smart-Home Uptime Watchdog (`📡 Watchdog`)**
-   - Built-in 60-second probes for **Home ISP Uplink (`eth0`)** and **Surfshark UK VPN Tunnel (`wg-vpn`)**, plus custom **ICMP Ping**, **HTTP/HTTPS**, and **TCP Port** monitors for your NAS, router, Plex, or smart-home devices.
-   - Visual green/red heartbeat timelines, uptime percentages, and incident log.
-   - **Phone Push Alerts** via **ntfy.sh** (free iOS/Android push app, no account required), **Telegram Bot**, **Pushover**, or **Discord/Slack Webhooks**. If your home ISP drops, alerts are queued in memory and delivered with the outage summary as soon as WAN recovers.
+4. **Home Network & VPN Hotspot Scanner (`🌐 Network`)**
+   - **VPN Hotspot Clients (`wlan0`)**: Shows every device connected to `UK-Frame-VPN` with **live download/upload speed (Kbps/Mbps)**, **total session data (↓ / ↑)**, **Wi-Fi signal strength (dBm)**, and connected duration.
+   - **Home Router LAN Devices (`eth0`)**: 1-tap **Scan Whole Network** runs a fast non-root Layer-2 ARP sweep across your subnet to discover active TVs, smart plugs, phones, speakers, and computers (even devices that drop ICMP ping). *(Note: per-device bandwidth is only visible for traffic routed through the Pi; devices talking directly to your main router are honestly marked `Bandwidth N/A from Pi`.)*
+   - **Readable Names & Device Icons**: Combines mDNS/Bonjour (`avahi-browse`), DHCP leases, reverse DNS, and IEEE OUI MAC vendor lookup (`ieee-data` + built-in consumer smart-home table) to auto-label devices (`📺 TV`, `🔌 Smart Plug`, `📱 Phone`, `💻 Computer`, `🔊 Speaker`, `📷 Camera`, etc.), flags randomized **Private MAC** phones, and lets you save custom **Rename / Type** tags per MAC.
+   - **New-Device & Unknown-Device Alerts**: Automatically baselines existing devices on first run, flags brand-new unknown MAC addresses with an amber **`NEW`** badge + **`✓ Trust`** button, and sends a phone push alert via your Watchdog notification channel (toggleable via **🔔 Alert on New Devices**).
+   - 1-tap **+ Watch** and **+ WoL** shortcuts on every device row.
 
-4. **Wake-on-LAN (`⚡ Wake-on-LAN`)**
+5. **ISP, UK VPN & Smart-Home Uptime Watchdog (`📡 Watchdog`)**
+   - Built-in 60-second probes for **Home ISP Uplink (`eth0`)**, **Surfshark UK VPN Tunnel (`wg-vpn`)**, and **Pi System Health**, plus custom **ICMP Ping**, **HTTP/HTTPS**, and **TCP Port** monitors for your NAS, router, Plex, or smart-home devices.
+   - Visual green/red heartbeat timelines, uptime percentages, and incident log (including new-device and thermal/disk incidents).
+   - **Phone Push Alerts** via **ntfy.sh** (free iOS/Android push app, no account required), **Telegram Bot**, **Pushover**, or **Discord/Slack Webhooks**. If your home ISP drops, alerts are queued in memory and delivered as soon as WAN recovers.
+
+6. **Wake-on-LAN (`⚡ Wake-on-LAN`)**
    - Wake sleeping desktop PCs, media servers, or NAS boxes over Ethernet (`eth0` UDP Magic Packet broadcast) with one tap from your phone.
-   - Includes a live **Awake / Asleep** ping indicator and a **1-click ARP LAN Scanner** so you don't have to look up MAC addresses manually.
+   - Includes a live **Awake / Asleep** ping indicator and a **1-click ARP LAN Scanner**.
 
 ---
 

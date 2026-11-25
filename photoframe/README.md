@@ -6,7 +6,8 @@ every 20 minutes, with a footer showing the current weather and the photo's
 EXIF capture date and place.
 
 - Panel: 800 × 480 native, 6-colour Spectra, mounted vertically.
-- Weather: Open-Meteo — free, no API key (temperature only).
+- Weather: Open-Meteo — free, no API key (current temperature + hourly forecast & rain probability).
+- Daily Dashboard Mode: Optional high-contrast Spectra 6 **Weather, Rain Chance & Editorial Quote / Fun Fact** card (`dashboard.py`) controlled from `config.local.json` or the Web Hub (`alternate`, `dashboard`, `schedule`, or `photos` modes).
 - Photo places: GPS EXIF reverse-geocoded with Nominatim/OpenStreetMap (cached, optional).
 - Random selection: avoids repeating the current photo when more than one is
   available; new files are picked up automatically.

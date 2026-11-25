@@ -28,6 +28,7 @@ from vpn import manager as vm  # noqa: E402
 from webui import monitor as wm  # noqa: E402
 from webui import network as wn  # noqa: E402
 from webui import photos as wp  # noqa: E402
+from webui import system_health as sh  # noqa: E402
 from webui import vpn_bridge as wb  # noqa: E402
 
 LOG = logging.getLogger("webui")
@@ -68,6 +69,12 @@ DEFAULT_WEBUI_CONFIG: dict[str, Any] = {
             "ntfy": {"enabled": False, "server": "https://ntfy.sh", "topic": ""},
             "webhook": {"enabled": False, "url": ""},
         },
+        "system_alerts": {
+            "enabled": True,
+            "cpu_temp_c": 80,
+            "disk_pct": 90,
+            "alert_throttling": True,
+        },
     },
     "wol": {
         "broadcast_ip": "255.255.255.255",
@@ -75,6 +82,7 @@ DEFAULT_WEBUI_CONFIG: dict[str, Any] = {
         "devices": [],
     },
     "network": {
+        "alert_new_devices": True,
         "aliases": {},
     },
 }
@@ -189,7 +197,26 @@ class AppContext:
             webui_config_getter=self.get_config,
             local_config_updater=self.update_local_config,
             vpn_config_path=cfg["_vpn_config_path"],
+            state_dir=cfg["_state_dir"],
+            on_new_devices=self._on_new_network_devices,
         )
+        self.monitor.network_scanner = self.network
+
+    def _on_new_network_devices(self, devices: list[dict[str, Any]]) -> None:
+        """Push a Watchdog alert when brand-new unknown device(s) join the Wi-Fi or VPN hotspot."""
+        if len(devices) == 1:
+            d = devices[0]
+            title = f"[NEW DEVICE] {d['name']}"
+            msg = (
+                f"New unknown device joined {d['network_label']}: "
+                f"{d['name']} ({d['category_label']}, IP {d['ip'] or 'unknown'}, MAC {d['mac']}, {d['vendor']})."
+            )
+        else:
+            names = ", ".join(f"{d['name']} ({d['ip'] or d['mac']})" for d in devices[:4])
+            extra = f" +{len(devices) - 4} more" if len(devices) > 4 else ""
+            title = f"[NEW DEVICES] {len(devices)} unknown devices joined"
+            msg = f"Detected {len(devices)} new devices on your network: {names}{extra}."
+        self.monitor.dispatch_external_alert("Network Scanner", "new_device", title, msg)
 
     def get_config(self) -> dict[str, Any]:
         return load_webui_config(self.config_path)
@@ -325,6 +352,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     self._send_json(self.ctx.network.scan(active_sweep=True))
                 else:
                     self._send_json(self.ctx.network.get_snapshot(max_age_seconds=4.0))
+            elif path == "/api/system/health":
+                self._send_json(sh.get_system_health())
             else:
                 self._send_json({"error": "Unknown endpoint"}, status=HTTPStatus.NOT_FOUND)
         except (ValueError, FileNotFoundError) as exc:
@@ -467,6 +496,19 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                         category=str(body_json.get("category") or ""),
                     )
                 )
+
+            elif path == "/api/network/trust":
+                body_json = self._read_json_body()
+                self._send_json(
+                    self.ctx.network.trust_device(
+                        mac=str(body_json.get("mac") or ""),
+                        trust_all=bool(body_json.get("all", False)),
+                    )
+                )
+
+            elif path == "/api/network/settings":
+                body_json = self._read_json_body()
+                self._send_json(self.ctx.network.update_settings(body_json))
 
             else:
                 self._send_json({"error": "Unknown endpoint"}, status=HTTPStatus.NOT_FOUND)

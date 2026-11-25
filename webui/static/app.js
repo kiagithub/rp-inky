@@ -773,6 +773,7 @@
 
   function renderDeviceRow(d) {
     const typePill = `<span class="pill pill-neutral">${esc(d.category_label)}</span>`;
+    const newPill = d.is_new ? `<span class="pill pill-warn" title="New device not yet acknowledged">NEW</span>` : "";
     const privPill = d.is_private_mac ? `<span class="pill pill-neutral" title="Phone/tablet using randomized MAC">Private MAC</span>` : "";
     const sigPart = d.signal_dbm != null ? `<span>📶 ${d.signal_dbm} dBm</span>` : "";
     const connPart = d.connected_seconds != null ? `<span>⏱ ${formatDuration(d.connected_seconds)}</span>` : "";
@@ -797,14 +798,18 @@
 
     const canWatch = Boolean(d.ip) && !d.is_self;
     const canWol = Boolean(d.mac) && !d.is_self && !d.is_gateway;
+    const rowClasses = ["device-row", d.network === "hotspot" ? "is-hotspot" : "", d.is_new ? "is-new" : ""]
+      .filter(Boolean)
+      .join(" ");
 
     return `
-      <div class="device-row ${d.network === "hotspot" ? "is-hotspot" : ""}">
+      <div class="${rowClasses}">
         <div class="device-main">
           <div class="device-icon">${esc(d.icon || "📶")}</div>
           <div class="device-info">
             <div class="device-name-line">
               <span class="device-name">${esc(d.name)}</span>
+              ${newPill}
               ${typePill}
               ${privPill}
             </div>
@@ -819,6 +824,7 @@
         </div>
         ${bwHtml}
         <div class="device-actions">
+          ${d.is_new ? `<button type="button" class="btn btn-primary btn-sm" data-dev-trust="${esc(d.mac)}">✓ Trust</button>` : ""}
           <button type="button" class="btn btn-ghost btn-sm"
             data-dev-edit="${esc(d.mac)}"
             data-dev-name="${esc(d.custom_name || "")}"
@@ -885,8 +891,28 @@
       : `<p class="muted small">No matching LAN devices found. Click <strong>Scan Whole Network</strong> to sweep your subnet.</p>`;
 
     $("#net-scan-meta").textContent = `Last updated: ${data.scanned_at}${sum.mdns_available ? " • mDNS/Bonjour active" : ""}`;
+    $("#net-alert-new").checked = sum.alert_new_devices !== false;
+    const unknownCount = sum.unknown_devices || 0;
+    const trustAllBtn = $("#btn-net-trust-all");
+    trustAllBtn.classList.toggle("hidden", unknownCount === 0);
+    trustAllBtn.textContent = `✓ Trust All New (${unknownCount})`;
 
     // Bind row action buttons
+    $("#tab-network").querySelectorAll("button[data-dev-trust]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          lastNetworkData = await api("/api/network/trust", { method: "POST", json: { mac: btn.dataset.devTrust } });
+          renderNetworkView();
+          showToast("Device marked as trusted.");
+        } catch (err) {
+          showToast(err.message, true);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
     $("#tab-network").querySelectorAll("button[data-dev-edit]").forEach((btn) => {
       btn.addEventListener("click", () => {
         $("#dev-modal-mac").value = btn.dataset.devEdit;
@@ -956,8 +982,76 @@
 
   $("#btn-net-refresh").addEventListener("click", () => loadNetwork(false));
   $("#btn-net-sweep").addEventListener("click", () => loadNetwork(true));
+  $("#btn-net-trust-all").addEventListener("click", async () => {
+    try {
+      lastNetworkData = await api("/api/network/trust", { method: "POST", json: { all: true } });
+      renderNetworkView();
+      showToast("All current devices marked as trusted.");
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+  $("#net-alert-new").addEventListener("change", async () => {
+    try {
+      lastNetworkData = await api("/api/network/settings", {
+        method: "POST",
+        json: { alert_new_devices: $("#net-alert-new").checked },
+      });
+      renderNetworkView();
+      showToast(
+        $("#net-alert-new").checked ? "New-device push alerts enabled." : "New-device push alerts paused."
+      );
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
   $("#net-search").addEventListener("input", renderNetworkView);
   $("#net-filter-scope").addEventListener("change", renderNetworkView);
+
+  // -------------------- Pi System Health Bar --------------------
+  function setHealthItem(sel, text, level = "") {
+    const el = $(sel);
+    if (!el) return;
+    el.textContent = text;
+    el.className = level ? `health-item ${level}` : "health-item";
+  }
+
+  async function loadSystemHealth() {
+    const h = await api("/api/system/health");
+    if (h.cpu_temp_c != null) {
+      const lvl = h.cpu_temp_c >= 80 ? "crit" : h.cpu_temp_c >= 70 ? "warn" : "ok";
+      setHealthItem("#health-temp", `🌡 CPU: ${h.cpu_temp_c.toFixed(1)}°C`, lvl);
+    } else {
+      setHealthItem("#health-temp", "🌡 CPU: N/A");
+    }
+
+    const mem = h.memory || {};
+    if (mem.available && mem.pct != null) {
+      const lvl = mem.pct >= 90 ? "crit" : mem.pct >= 80 ? "warn" : "ok";
+      const totalStr = mem.total_mb >= 1024 ? `${(mem.total_mb / 1024).toFixed(1)}G` : `${mem.total_mb}M`;
+      setHealthItem("#health-ram", `🧠 RAM: ${mem.used_mb}M/${totalStr} (${Math.round(mem.pct)}%)`, lvl);
+    } else {
+      setHealthItem("#health-ram", "🧠 RAM: N/A");
+    }
+
+    const disk = h.disk || {};
+    if (disk.available && disk.pct != null) {
+      const lvl = disk.pct >= 90 ? "crit" : disk.pct >= 80 ? "warn" : "ok";
+      setHealthItem("#health-disk", `💾 SD: ${disk.used_gb}/${disk.total_gb} GB (${Math.round(disk.pct)}%)`, lvl);
+    } else {
+      setHealthItem("#health-disk", "💾 SD: N/A");
+    }
+
+    const thr = h.throttled || {};
+    if (thr.available) {
+      setHealthItem("#health-power", `⚡ Power: ${thr.summary}`, thr.status || "ok");
+    } else {
+      setHealthItem("#health-power", "⚡ Power: OK", "ok");
+    }
+
+    const loadPart = h.load_1m != null ? ` • Load ${h.load_1m.toFixed(2)}` : "";
+    setHealthItem("#health-uptime", `⏱ Up: ${h.uptime_human || "—"}${loadPart}`);
+  }
 
   $("#btn-close-dev-modal").addEventListener("click", () => $("#device-modal").classList.add("hidden"));
   $("#device-alias-form").addEventListener("submit", async (e) => {
@@ -981,7 +1075,7 @@
 
   async function refreshAll() {
     try {
-      await Promise.all([loadGallery(), loadVpnStatus(), loadMonitor()]);
+      await Promise.all([loadGallery(), loadVpnStatus(), loadMonitor(), loadSystemHealth()]);
     } catch (_err) {
       // Handled by api()
     }
@@ -991,6 +1085,7 @@
   setInterval(() => {
     loadVpnStatus().catch(() => {});
     loadMonitor().catch(() => {});
+    loadSystemHealth().catch(() => {});
     if (activeTab === "network") {
       loadNetwork(false).catch(() => {});
     }

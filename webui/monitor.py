@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from vpn import manager as vm
+from webui import system_health as sh
 
 LOG = logging.getLogger("webui.monitor")
 
@@ -297,6 +298,9 @@ class UptimeMonitor:
         self._metrics: dict[str, dict[str, Any]] = persisted.get("metrics") if isinstance(persisted.get("metrics"), dict) else {}
         self._incidents: list[dict[str, Any]] = persisted.get("incidents") if isinstance(persisted.get("incidents"), list) else []
         self._pending_alerts: list[tuple[str, str]] = []
+        self._sys_alert_state: dict[str, bool] = {"temp": False, "disk": False, "throttled": False}
+        self._last_net_scan = 0.0
+        self.network_scanner: Any = None
 
     def start(self) -> None:
         """Start the background periodic probing thread."""
@@ -325,9 +329,28 @@ class UptimeMonitor:
             if mon_cfg.get("enabled", True):
                 with suppress(Exception):
                     self.run_once()
+            # Background new-device scan every 2 minutes when NetworkScanner is attached
+            if self.network_scanner is not None and (time.monotonic() - self._last_net_scan) >= 120.0:
+                self._last_net_scan = time.monotonic()
+                with suppress(Exception):
+                    self.network_scanner.scan(active_sweep=False)
             interval = max(15, int(mon_cfg.get("interval_seconds", 60)))
             self._wake_event.wait(interval)
             self._wake_event.clear()
+
+    def dispatch_external_alert(self, target_name: str, status: str, title: str, message: str) -> None:
+        """Record an external incident (e.g. New Network Device) and push via configured alert channels."""
+        cfg = self._get_config()
+        notif_cfg = (cfg.get("monitor") or {}).get("notifications") or {}
+        now_iso = vm.utc_now_iso()
+        with self._lock:
+            self._record_incident(target_name, status, message, now_iso)
+        errs = send_notifications(notif_cfg, title, message)
+        if errs:
+            LOG.warning("External alert deferred (%s): %s", title, "; ".join(errs))
+            with self._lock:
+                self._pending_alerts = [*self._pending_alerts, (title, message)][-20:]
+        self._flush_state(force=True)
 
     def _probe_target(self, target: dict[str, Any], vpn_cfg: dict[str, Any]) -> tuple[bool, Optional[float], str]:
         ttype = str(target.get("type") or "ping").lower()
@@ -416,6 +439,61 @@ class UptimeMonitor:
                         msg = f"{name} failed {fails} consecutive checks ({detail})."
                         new_alerts.append((f"[DOWN] {name}", msg))
                         self._record_incident(name, "down", msg, now_iso)
+                        state_changed = True
+
+        # Check Raspberry Pi System Health thresholds (CPU temp, SD disk %, power throttling)
+        sys_cfg = mon_cfg.get("system_alerts") or {}
+        if sys_cfg.get("enabled", True):
+            health = sh.get_system_health()
+            temp_limit = float(sys_cfg.get("cpu_temp_c", 80))
+            disk_limit = float(sys_cfg.get("disk_pct", 90))
+            temp_val = health.get("cpu_temp_c")
+            disk_val = (health.get("disk") or {}).get("pct")
+            throt = health.get("throttled") or {}
+
+            with self._lock:
+                if temp_val is not None:
+                    if temp_val >= temp_limit and not self._sys_alert_state["temp"]:
+                        self._sys_alert_state["temp"] = True
+                        msg = f"Raspberry Pi CPU temperature reached {temp_val:.1f} C (threshold {temp_limit:.0f} C)."
+                        new_alerts.append(("[ALERT] Pi High CPU Temp", msg))
+                        self._record_incident("Pi CPU Temp", "down", msg, now_iso)
+                        state_changed = True
+                    elif temp_val <= (temp_limit - 5.0) and self._sys_alert_state["temp"]:
+                        self._sys_alert_state["temp"] = False
+                        msg = f"Raspberry Pi CPU temperature cooled down to {temp_val:.1f} C."
+                        new_alerts.append(("[RECOVERED] Pi CPU Temp", msg))
+                        self._record_incident("Pi CPU Temp", "recovered", msg, now_iso)
+                        state_changed = True
+
+                if disk_val is not None:
+                    if disk_val >= disk_limit and not self._sys_alert_state["disk"]:
+                        self._sys_alert_state["disk"] = True
+                        free_gb = (health.get("disk") or {}).get("free_gb", 0)
+                        msg = f"Raspberry Pi SD card is {disk_val:.1f}% full ({free_gb} GB free)."
+                        new_alerts.append(("[ALERT] Pi SD Card Nearly Full", msg))
+                        self._record_incident("Pi SD Card", "down", msg, now_iso)
+                        state_changed = True
+                    elif disk_val <= (disk_limit - 2.0) and self._sys_alert_state["disk"]:
+                        self._sys_alert_state["disk"] = False
+                        msg = f"Raspberry Pi SD card usage dropped to {disk_val:.1f}%."
+                        new_alerts.append(("[RECOVERED] Pi SD Card", msg))
+                        self._record_incident("Pi SD Card", "recovered", msg, now_iso)
+                        state_changed = True
+
+                if sys_cfg.get("alert_throttling", True) and throt.get("available"):
+                    is_crit = throt.get("status") == "crit"
+                    if is_crit and not self._sys_alert_state["throttled"]:
+                        self._sys_alert_state["throttled"] = True
+                        msg = f"Raspberry Pi power/thermal warning: {throt.get('summary')}."
+                        new_alerts.append(("[ALERT] Pi Power/Thermal Throttling", msg))
+                        self._record_incident("Pi Power/Thermal", "down", msg, now_iso)
+                        state_changed = True
+                    elif not is_crit and self._sys_alert_state["throttled"]:
+                        self._sys_alert_state["throttled"] = False
+                        msg = "Raspberry Pi power/thermal throttling cleared."
+                        new_alerts.append(("[RECOVERED] Pi Power/Thermal", msg))
+                        self._record_incident("Pi Power/Thermal", "recovered", msg, now_iso)
                         state_changed = True
 
         # Queue and dispatch notifications (retaining failed sends if WAN was temporarily down)

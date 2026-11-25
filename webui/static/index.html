@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0f172a">
   <title>rp-inky Hub — Frame • VPN • Network • Watchdog • WoL</title>
-  <link rel="stylesheet" href="/style.css?v=3">
+  <link rel="stylesheet" href="/style.css?v=4">
 </head>
 <body>
   <header class="topbar">
@@ -22,6 +22,16 @@
       <span id="pill-wan" class="pill pill-neutral">ISP: …</span>
     </div>
   </header>
+
+  <div class="health-bar" id="health-bar" aria-label="Raspberry Pi System Health">
+    <div class="health-inner">
+      <span class="health-item" id="health-temp" title="Raspberry Pi CPU temperature">🌡 CPU: —</span>
+      <span class="health-item" id="health-ram" title="System memory usage">🧠 RAM: —</span>
+      <span class="health-item" id="health-disk" title="SD card root filesystem usage">💾 SD: —</span>
+      <span class="health-item" id="health-power" title="Power supply & thermal throttling status">⚡ Power: —</span>
+      <span class="health-item" id="health-uptime" title="System uptime & 1m load">⏱ Up: —</span>
+    </div>
+  </div>
 
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="photos">🖼 Photos</button>
@@ -229,6 +239,11 @@
             <p class="muted small" id="net-scan-meta">Click "Scan Whole Network" to discover all active devices on your home Wi-Fi &amp; VPN hotspot.</p>
           </div>
           <div class="btn-row wrap-row">
+            <label class="checkbox-row small" title="Send a Watchdog push alert whenever a brand-new MAC address joins your Wi-Fi or VPN hotspot">
+              <input type="checkbox" id="net-alert-new" checked>
+              <span>🔔 Alert on New Devices</span>
+            </label>
+            <button id="btn-net-trust-all" class="btn btn-ghost btn-sm hidden" type="button">✓ Trust All New</button>
             <button id="btn-net-refresh" class="btn btn-ghost btn-sm" type="button">Refresh Live Stats</button>
             <button id="btn-net-sweep" class="btn btn-primary btn-sm" type="button">🔍 Scan Whole Network</button>
           </div>
@@ -448,6 +463,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=3"></script>
+  <script src="/app.js?v=4"></script>
 </body>
 </html>
