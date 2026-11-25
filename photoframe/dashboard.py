@@ -22,22 +22,23 @@ WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 MONTHS_UPPER = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 
 # Curated, concise (<= 145 chars) fun facts & quotes sized for 26-32px bold type at 2-3 yards.
+# Pure ASCII punctuation avoids missing-glyph tofu boxes on fallback fonts.
 CURATED_WISDOM: list[dict[str, str]] = [
-    {"kind": "fact", "text": "Honey never spoils — sealed jars found in 3,000-year-old Egyptian tombs are still edible.", "source": "Archaeology"},
+    {"kind": "fact", "text": "Honey never spoils - sealed jars found in 3,000-year-old Egyptian tombs are still edible.", "source": "Archaeology"},
     {"kind": "quote", "text": "Simplicity is the ultimate sophistication.", "source": "Leonardo da Vinci"},
-    {"kind": "fact", "text": "Octopuses have three hearts, blue copper-based blood, and nine brains — one in each arm.", "source": "Marine Biology"},
+    {"kind": "fact", "text": "Octopuses have three hearts, blue copper-based blood, and nine brains - one in each arm.", "source": "Marine Biology"},
     {"kind": "quote", "text": "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", "source": "Will Durant"},
-    {"kind": "fact", "text": "A day on Venus is longer than a year on Venus — it takes 243 Earth days just to rotate once.", "source": "Astronomy"},
+    {"kind": "fact", "text": "A day on Venus is longer than a year on Venus - it takes 243 Earth days just to rotate once.", "source": "Astronomy"},
     {"kind": "quote", "text": "In the middle of difficulty lies opportunity.", "source": "Albert Einstein"},
     {"kind": "fact", "text": "Bananas are botanically berries, while strawberries and raspberries are not berries at all.", "source": "Botany"},
     {"kind": "quote", "text": "The best time to plant a tree was twenty years ago. The second best time is now.", "source": "Proverb"},
-    {"kind": "fact", "text": "There are more trees on Earth — over three trillion — than stars in the Milky Way galaxy.", "source": "Nature Journal"},
+    {"kind": "fact", "text": "There are more trees on Earth - over three trillion - than stars in the Milky Way galaxy.", "source": "Nature Journal"},
     {"kind": "quote", "text": "Well done is better than well said.", "source": "Benjamin Franklin"},
     {"kind": "fact", "text": "Sharks existed on Earth for roughly 50 million years before the very first trees evolved.", "source": "Paleontology"},
     {"kind": "quote", "text": "Do what you can, with what you have, where you are.", "source": "Theodore Roosevelt"},
     {"kind": "fact", "text": "Light from the Sun takes 8 minutes and 20 seconds to travel across space and reach your eyes.", "source": "Physics"},
     {"kind": "quote", "text": "Not all those who wander are lost.", "source": "J.R.R. Tolkien"},
-    {"kind": "fact", "text": "Oxford University is older than the Aztec Empire — teaching began there as early as 1096.", "source": "History"},
+    {"kind": "fact", "text": "Oxford University is older than the Aztec Empire - teaching began there as early as 1096.", "source": "History"},
     {"kind": "quote", "text": "Everything you can imagine is real.", "source": "Pablo Picasso"},
     {"kind": "fact", "text": "Wombats are the only known animals in the world that produce cube-shaped droppings.", "source": "Zoology"},
     {"kind": "quote", "text": "Stay hungry, stay foolish.", "source": "Whole Earth Catalog"},
@@ -45,17 +46,47 @@ CURATED_WISDOM: list[dict[str, str]] = [
     {"kind": "quote", "text": "Fortune favors the prepared mind.", "source": "Louis Pasteur"},
     {"kind": "fact", "text": "The Eiffel Tower grows up to 15 cm taller in summer as heat expands its iron frame.", "source": "Engineering"},
     {"kind": "quote", "text": "Knowledge speaks, but wisdom listens.", "source": "Jimi Hendrix"},
-    {"kind": "fact", "text": "A bolt of lightning is five times hotter than the surface of the Sun — nearly 30,000°C.", "source": "Meteorology"},
+    {"kind": "fact", "text": "A bolt of lightning is five times hotter than the surface of the Sun - nearly 30,000°C.", "source": "Meteorology"},
     {"kind": "quote", "text": "It always seems impossible until it is done.", "source": "Nelson Mandela"},
     {"kind": "fact", "text": "Cleopatra lived closer in time to the Apollo Moon landing than to the Great Pyramid's construction.", "source": "History"},
     {"kind": "quote", "text": "Make things as simple as possible, but no simpler.", "source": "Albert Einstein"},
-    {"kind": "fact", "text": "Crows can recognize individual human faces and hold grudges — or gratitude — for years.", "source": "Ornithology"},
+    {"kind": "fact", "text": "Crows can recognize individual human faces and hold grudges - or gratitude - for years.", "source": "Ornithology"},
     {"kind": "quote", "text": "Action is the foundational key to all success.", "source": "Pablo Picasso"},
     {"kind": "fact", "text": "Neutron stars are so dense that a single teaspoon of their matter weighs about a billion tons.", "source": "Astrophysics"},
     {"kind": "quote", "text": "Courage is grace under pressure.", "source": "Ernest Hemingway"},
     {"kind": "fact", "text": "Scotland chose the unicorn as its official national animal back in the late 14th century.", "source": "History"},
     {"kind": "quote", "text": "What you do today can improve all your tomorrows.", "source": "Ralph Marston"},
 ]
+
+
+UNICODE_PUNCT_MAP = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201a": "'",
+        "\u201b": "'",
+        "\u2032": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u201e": '"',
+        "\u201f": '"',
+        "\u00ab": '"',
+        "\u00bb": '"',
+        "\u2033": '"',
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2015": "-",
+        "\u2212": "-",
+        "\u00a0": " ",
+    }
+)
+
+
+def clean_display_text(text: str) -> str:
+    """Normalize smart quotes, dashes and ellipses to font-safe Latin-1 characters."""
+    cleaned = str(text or "").translate(UNICODE_PUNCT_MAP).replace("\u2026", "...")
+    # Strip any remaining non-Latin-1 glyphs (e.g. emoji) that render as x-boxes
+    return "".join(ch for ch in cleaned if ord(ch) <= 0x00FF)
 
 
 def select_daily_wisdom(
@@ -230,18 +261,31 @@ def _hard_mask(size: tuple[int, int], draw_fn: Any) -> Image.Image:
 
 
 def paste_raindrop(canvas: Image.Image, xy: tuple[int, int], size: int, fill: tuple[int, int, int]) -> None:
-    """Draw a crisp geometric raindrop icon at xy."""
-    s = max(12, int(size))
+    """Draw a smooth tangent teardrop icon with a crisp inner highlight."""
+    s = max(16, int(size))
+    cx = s * 0.50
+    cy = s * 0.65
+    r = s * 0.31
+    apex_y = s * 0.06
+    dist = max(r + 1.0, cy - apex_y)
+    sin_a = min(0.95, r / dist)
+    cos_a = math.sqrt(max(0.0, 1.0 - sin_a * sin_a))
+    tx_left = cx - r * cos_a
+    tx_right = cx + r * cos_a
+    ty = cy - r * sin_a
 
-    def _draw(d: ImageDraw.ImageDraw) -> None:
-        cx = s * 0.5
-        r = s * 0.30
-        cy = s * 0.64
-        d.polygon([(cx, s * 0.08), (cx - r * 0.96, cy - r * 0.2), (cx + r * 0.96, cy - r * 0.2)], fill=255)
+    def _drop_body(d: ImageDraw.ImageDraw) -> None:
+        d.polygon([(cx, apex_y), (tx_left, ty), (tx_right, ty)], fill=255)
         d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
 
-    mask = _hard_mask((s, s), _draw)
-    canvas.paste(fill, xy, mask)
+    def _glint(d: ImageDraw.ImageDraw) -> None:
+        gr = max(1.5, s * 0.075)
+        gx, gy = cx - r * 0.34, cy + r * 0.14
+        d.ellipse([gx - gr, gy - gr, gx + gr, gy + gr], fill=255)
+
+    canvas.paste(fill, xy, _hard_mask((s, s), _drop_body))
+    if s >= 20:
+        canvas.paste(WHITE, xy, _hard_mask((s, s), _glint))
 
 
 def paste_multicolor_weather_icon(
@@ -414,10 +458,10 @@ def render_dashboard_frame(
     f_header_date = pf._load_font(bold_path, 23)
     f_hero_temp = pf._load_font(bold_path, 82)
     f_hero_cond = pf._load_font(bold_path, 26)
-    f_hero_sub = pf._load_font(bold_path, 23)
-    f_col_hour = pf._load_font(bold_path, 24)
-    f_col_temp = pf._load_font(bold_path, 34)
-    f_col_rain = pf._load_font(bold_path, 24)
+    f_hero_sub = pf._load_font(bold_path, 24)
+    f_col_hour = pf._load_font(bold_path, 26)
+    f_col_temp = pf._load_font(bold_path, 38)
+    f_col_rain = pf._load_font(bold_path, 26)
     f_badge = pf._load_font(bold_path, 19)
     f_source = pf._load_font(bold_path, 21)
 
@@ -426,7 +470,7 @@ def render_dashboard_frame(
 
     # 1. Header bar (0..62) — solid BLACK with WHITE city & YELLOW weekday/date
     draw.rectangle((0, 0, WIDTH, 62), fill=BLACK)
-    city_label = str(
+    city_label = clean_display_text(
         getattr(weather, "location_name", None) or config["weather"].get("location") or "WEATHER"
     ).upper()
     date_label = f"{WEEKDAYS[ref_dt.weekday()]} {ref_dt.day:02d} {MONTHS_UPPER[ref_dt.month - 1]}"
@@ -451,7 +495,7 @@ def render_dashboard_frame(
     pf.paste_text(
         canvas,
         (hero_x, 166),
-        pf.truncate_text(cond_label, f_hero_cond, WIDTH - hero_x - 18),
+        pf.truncate_text(clean_display_text(cond_label), f_hero_cond, WIDTH - hero_x - 18),
         f_hero_cond,
         BLACK,
     )
@@ -464,10 +508,10 @@ def render_dashboard_frame(
     sub_y = 203
     if rain_now is not None:
         rain_color = RED if rain_now >= 70 else BLUE
-        paste_raindrop(canvas, (sub_x, sub_y + 1), 24, rain_color)
+        paste_raindrop(canvas, (sub_x, sub_y), 26, rain_color)
         rain_txt = f"{int(rain_now)}%"
-        pf.paste_text(canvas, (sub_x + 27, sub_y), rain_txt, f_hero_sub, rain_color)
-        sub_x += 27 + pf.text_width(f_hero_sub, rain_txt) + 18
+        pf.paste_text(canvas, (sub_x + 30, sub_y), rain_txt, f_hero_sub, rain_color)
+        sub_x += 30 + pf.text_width(f_hero_sub, rain_txt) + 18
 
     if high_val is not None and low_val is not None:
         hl_txt = f"H:{round(high_val)}° L:{round(low_val)}°"
@@ -482,7 +526,7 @@ def render_dashboard_frame(
     # Thick divider
     draw.rectangle((16, 248, WIDTH - 16, 251), fill=BLACK)
 
-    # 3. 4-Column Hourly Forecast + Rain Chance Bars (252..534)
+    # 3. 4-Column Hourly Forecast + Rain Chance (252..530) — clean, large icons & droplets (no boxes)
     slots: list[dict[str, Any]] = list(getattr(weather, "hourly", None) or []) if weather else []
     col_count = 4
     col_w = (WIDTH - 24) // col_count  # 114 px each
@@ -494,59 +538,47 @@ def render_dashboard_frame(
             cx0 = 12 + idx * col_w
             center_x = cx0 + col_w // 2
             if idx > 0:
-                draw.line([(cx0, 264), (cx0, 522)], fill=BLACK, width=1)
+                draw.line([(cx0, 266), (cx0, 516)], fill=BLACK, width=1)
 
             # Time label (e.g. 3PM)
-            lbl = str(slot.get("label") or "")
+            lbl = clean_display_text(str(slot.get("label") or ""))
             lw = pf.text_width(f_col_hour, lbl)
-            pf.paste_text(canvas, (center_x - lw // 2, 262), lbl, f_col_hour, BLACK)
+            pf.paste_text(canvas, (center_x - lw // 2, 266), lbl, f_col_hour, BLACK)
 
-            # Weather symbol (58x58)
+            # Large Weather symbol (72x72)
             _, s_icon = pf.weather_code_info(slot.get("code"))
-            paste_multicolor_weather_icon(canvas, (center_x - 29, 296), s_icon, bool(slot.get("is_day", True)), 58)
+            paste_multicolor_weather_icon(canvas, (center_x - 36, 306), s_icon, bool(slot.get("is_day", True)), 72)
 
-            # Hourly temp (34px bold)
+            # Hourly temp (38px bold)
             stemp = f"{round(slot['temp'])}°" if slot.get("temp") is not None else "--"
             tw = pf.text_width(f_col_temp, stemp)
-            pf.paste_text(canvas, (center_x - tw // 2, 364), stemp, f_col_temp, BLACK)
+            pf.paste_text(canvas, (center_x - tw // 2, 394), stemp, f_col_temp, BLACK)
 
-            # Visual Rain Chance Gauge Bar (width 64, height 34)
+            # Rain droplet + bold percentage (26px)
             rain_pct = int(slot.get("rain") or 0)
-            bar_w, bar_h = 64, 32
-            bx0 = center_x - bar_w // 2
-            by0 = 416
-            draw.rectangle((bx0, by0, bx0 + bar_w, by0 + bar_h), outline=BLACK, width=2, fill=WHITE)
-            if rain_pct > 0:
-                fill_color = RED if rain_pct >= 70 else BLUE
-                inner_h = max(4, round((bar_h - 4) * (rain_pct / 100.0)))
-                draw.rectangle(
-                    (bx0 + 2, by0 + bar_h - 2 - inner_h, bx0 + bar_w - 2, by0 + bar_h - 2),
-                    fill=fill_color,
-                )
-
-            # Rain % + droplet label (24px bold)
             r_txt = f"{rain_pct}%"
             r_col = RED if rain_pct >= 70 else (BLUE if rain_pct >= 20 else BLACK)
-            drop_sz = 21
-            group_w = drop_sz + 4 + pf.text_width(f_col_rain, r_txt)
+            drop_col = RED if rain_pct >= 70 else BLUE
+            drop_sz = 26
+            group_w = drop_sz + 5 + pf.text_width(f_col_rain, r_txt)
             gx = center_x - group_w // 2
-            paste_raindrop(canvas, (gx, 463), drop_sz, BLUE if rain_pct < 70 else RED)
-            pf.paste_text(canvas, (gx + drop_sz + 4, 460), r_txt, f_col_rain, r_col)
+            paste_raindrop(canvas, (gx, 462), drop_sz, drop_col)
+            pf.paste_text(canvas, (gx + drop_sz + 5, 461), r_txt, f_col_rain, r_col)
 
     # Thick divider above Daily Wisdom card
-    draw.rectangle((16, 534, WIDTH - 16, 537), fill=BLACK)
+    draw.rectangle((16, 530, WIDTH - 16, 533), fill=BLACK)
 
-    # 4. Daily Fun Fact / Quote Card (540..800)
+    # 4. Daily Fun Fact / Quote Card (536..800)
     kind = str(wisdom.get("kind") or "quote").lower()
     badge_text = "DID YOU KNOW?" if kind == "fact" else ("DAILY NOTE" if kind == "note" else "QUOTE OF THE DAY")
     bw = pf.text_width(f_badge, badge_text) + 24
     bh_text = pf.text_metrics(f_badge, badge_text)[1]
-    draw.rectangle((22, 550, 22 + bw, 586), fill=YELLOW, outline=BLACK, width=2)
-    pf.paste_text(canvas, (34, 550 + max(2, (36 - bh_text) // 2)), badge_text, f_badge, BLACK)
+    draw.rectangle((22, 548, 22 + bw, 584), fill=YELLOW, outline=BLACK, width=2)
+    pf.paste_text(canvas, (34, 548 + max(2, (36 - bh_text) // 2)), badge_text, f_badge, BLACK)
 
-    raw_body = str(wisdom.get("text") or "").strip()
-    body_text = f"“{raw_body}”" if kind == "quote" and not raw_body.startswith(("“", '"')) else raw_body
-    source_text = str(wisdom.get("source") or "").strip()
+    raw_body = clean_display_text(str(wisdom.get("text") or "").strip()).strip('"')
+    body_text = f'"{raw_body}"' if kind == "quote" and raw_body else raw_body
+    source_text = clean_display_text(str(wisdom.get("source") or "").strip())
 
     max_text_w = WIDTH - 48
     avail_bottom = 750 if source_text else 784
@@ -586,7 +618,7 @@ def render_dashboard_frame(
         pf.paste_text(canvas, (24, start_y + idx * line_step), line, chosen_font, BLACK)
 
     if source_text:
-        attr = f"— {source_text}"
+        attr = f"- {source_text}"
         attr_trunc = pf.truncate_text(attr, f_source, WIDTH - 48)
         aw = pf.text_width(f_source, attr_trunc)
         pf.paste_text(canvas, (WIDTH - 24 - aw, 758), attr_trunc, f_source, BLUE if kind == "fact" else BLACK)

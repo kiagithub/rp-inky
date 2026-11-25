@@ -500,6 +500,9 @@ def test_parse_hourly_weather_and_render_dashboard(tmp_path):
     used_colors = {color for _, color in frame.getcolors(maxcolors=1000)}
     assert used_colors.issubset(palette_set)
 
+    # Normalizes smart quotes, apostrophes and em-dashes so fallback fonts never draw x-boxes
+    assert pfd.clean_display_text("\u201cDon\u2019t\u2014stop\u2026\u201d") == '"Don\'t-stop..."'
+
 
 def test_schedule_window_and_mode_selection(tmp_path):
     from datetime import datetime

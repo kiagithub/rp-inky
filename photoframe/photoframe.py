@@ -274,7 +274,7 @@ def truncate_text(text, font, max_width):
     """Truncate text with an ellipsis so it fits max_width."""
     if text_width(font, text) <= max_width:
         return text
-    ellipsis = "…"
+    ellipsis = "..."
     while text and text_width(font, text + ellipsis) > max_width:
         text = text[:-1]
     return (text.rstrip() + ellipsis) if text else ellipsis
