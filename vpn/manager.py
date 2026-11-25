@@ -1385,6 +1385,15 @@ def stop_tunnel_processes(config: dict[str, Any]) -> None:
         run_cmd(["wg-quick", "down", str(wg_conf)], check=False)
     if interface_exists(wg_iface):
         run_cmd(["ip", "link", "del", "dev", wg_iface], check=False)
+    # Tear down legacy wg0 if still active from old vpn-hotspot setup
+    if wg_iface != "wg0" and interface_exists("wg0"):
+        LOG.warning("Stopping conflicting legacy wg0 tunnel...")
+        run_cmd(["systemctl", "disable", "--now", "wg-quick@wg0.service"], check=False)
+        run_cmd(["wg-quick", "down", "wg0"], check=False)
+        run_cmd(["ip", "link", "del", "dev", "wg0"], check=False)
+        for _ in range(5):
+            if run_cmd(["ip", "-4", "rule", "del", "lookup", "51820"], check=False).returncode != 0:
+                break
 
     _kill_pidfile(RUNTIME_DIR / "openvpn.pid")
     if interface_exists(ovpn_iface):
@@ -1423,9 +1432,10 @@ def start_wireguard_profile(profile: Profile, config: dict[str, Any]) -> list[st
 
     if shutil.which("nmcli"):
         run_cmd(["nmcli", "device", "set", wg_iface, "managed", "no"], check=False)
-    # Re-ensure IPv4 address is present in case a network daemon raced wg-quick
+    # Re-ensure IPv4 address and UP state in case a network daemon raced wg-quick
     if not get_interface_ipv4(wg_iface) and ipv4_hosts:
         run_cmd(["ip", "-4", "addr", "replace", f"{ipv4_hosts[0]}/16", "dev", wg_iface], check=False)
+    run_cmd(["ip", "link", "set", "dev", wg_iface, "mtu", str(config["wireguard"]["mtu"]), "up"], check=False)
 
     if config.get("disable_ipv6", True):
         run_cmd(["sysctl", "-w", f"net.ipv6.conf.{wg_iface}.disable_ipv6=1"], check=False)

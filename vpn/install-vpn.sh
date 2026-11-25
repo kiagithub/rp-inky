@@ -109,19 +109,23 @@ if sudo test -f /etc/wireguard/wg0.conf; then
     sudo mv -f /etc/wireguard/wg0.conf /etc/wireguard/wg0.conf.migrated
 fi
 
-for legacy_unit in wg-quick@wg0.service hotspot-ip.service hotspot-firewall.service; do
-    if systemctl list-unit-files "$legacy_unit" >/dev/null 2>&1 || [ -f "/etc/systemd/system/$legacy_unit" ]; then
-        sudo systemctl disable --now "$legacy_unit" >/dev/null 2>&1 || true
-        sudo rm -f "/etc/systemd/system/$legacy_unit"
-    fi
-done
-if command -v iptables >/dev/null 2>&1 && [ -f /etc/hotspot/rules.v4 ]; then
+# Unconditionally stop & disable legacy units (note: wg-quick@wg0 is a template instance!)
+sudo systemctl stop wg-quick@wg0.service hotspot-ip.service hotspot-firewall.service >/dev/null 2>&1 || true
+sudo systemctl disable wg-quick@wg0.service hotspot-ip.service hotspot-firewall.service >/dev/null 2>&1 || true
+sudo rm -f /etc/systemd/system/hotspot-ip.service /etc/systemd/system/hotspot-firewall.service \
+    /etc/systemd/system/multi-user.target.wants/wg-quick@wg0.service
+sudo wg-quick down wg0 >/dev/null 2>&1 || true
+sudo ip link del dev wg0 >/dev/null 2>&1 || true
+while sudo ip -4 rule del lookup 51820 >/dev/null 2>&1; do :; done
+sudo ip -4 route flush table 51820 >/dev/null 2>&1 || true
+
+# Always clear any legacy iptables FORWARD DROP / NAT rules left by old hotspot-firewall
+if command -v iptables >/dev/null 2>&1; then
     sudo iptables -P FORWARD ACCEPT >/dev/null 2>&1 || true
     sudo iptables -F FORWARD >/dev/null 2>&1 || true
     sudo iptables -t nat -F >/dev/null 2>&1 || true
 fi
 sudo rm -f /etc/dnsmasq.d/hotspot.conf /etc/sysctl.d/99-hotspot.conf /etc/NetworkManager/conf.d/hotspot-wlan0.conf /etc/hotspot/rules.v4
-sudo ip -4 route flush table 51820 >/dev/null 2>&1 || true
 
 # Repair /etc/resolv.conf if legacy openresolv left it pointing only to VPN-internal DNS
 if command -v resolvconf >/dev/null 2>&1; then
