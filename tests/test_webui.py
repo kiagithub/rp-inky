@@ -220,3 +220,50 @@ def test_webui_http_server_endpoints_and_csrf_protection(tmp_path):
     assert code == 200
     parsed = json.loads(resp_body.decode("utf-8"))
     assert parsed["devices"][0]["mac"] == "AA:BB:CC:DD:EE:11"
+
+
+def test_frame_actions_update_preview_and_shuffle_wisdom_immediately(tmp_path, monkeypatch):
+    for sub in ("photoframe", "vpn", "webui"):
+        (tmp_path / sub).mkdir()
+    cfg_path = tmp_path / "webui" / "config.json"
+    cfg_path.write_text(json.dumps({"port": 8080}), encoding="utf-8")
+    ctx = ws.AppContext(cfg_path)
+    pf_cfg = ctx.get_pf_config()
+
+    # Upload two photos
+    wp.save_uploaded_photo(_make_jpeg_bytes(color=(200, 30, 30)), "red.jpg", pf_cfg)
+    wp.save_uploaded_photo(_make_jpeg_bytes(color=(30, 30, 200)), "blue.jpg", pf_cfg)
+    monkeypatch.setattr(wp, "_signal_photoframe_process", lambda: True)
+    monkeypatch.setattr(pf, "get_weather", lambda *a, **kw: pf.Weather(temperature=20.0, code=0, is_day=True))
+
+    # 1. Show blue.jpg -> updates state and writes latest_preview.png immediately
+    res = wp.trigger_frame_action(pf_cfg, action="show", photo_name="blue.jpg")
+    assert res["signaled"] is True
+    assert res["next_image"] == "blue.jpg"
+    preview_path = pf_cfg["_state_dir"] / "latest_preview.png"
+    assert preview_path.is_file()
+    preview_1 = preview_path.read_bytes()
+
+    # 2. Next photo -> must switch away from blue.jpg to red.jpg immediately
+    res_next = wp.trigger_frame_action(pf_cfg, action="next")
+    assert res_next["next_image"] == "red.jpg"
+    preview_2 = preview_path.read_bytes()
+    assert preview_2 != preview_1
+
+    # 3. Shuffle wisdom -> clears sticky custom_text, increments wisdom_offset, renders dashboard preview
+    wp.update_dashboard_settings(pf_cfg, {"custom_text": "Sticky note", "refresh_now": False})
+    reloaded = ctx.get_pf_config()
+    assert reloaded["dashboard"]["custom_text"] == "Sticky note"
+
+    wp.trigger_frame_action(reloaded, action="shuffle_wisdom")
+    after_shuffle = ctx.get_pf_config()
+    assert after_shuffle["dashboard"]["custom_text"] == ""
+    state = pf.read_frame_state(after_shuffle["_state_dir"] / "state.json")
+    assert state["wisdom_offset"] == 1
+    assert state["force_view"] == "dashboard"
+    preview_dash_1 = preview_path.read_bytes()
+
+    wp.trigger_frame_action(after_shuffle, action="shuffle_wisdom")
+    preview_dash_2 = preview_path.read_bytes()
+    assert preview_dash_2 != preview_dash_1
+

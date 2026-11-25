@@ -153,6 +153,10 @@ def update_photo_sidecar(
 
     pf.write_json_atomic(sidecar_path, data)
     target = pf_config["_image_dir"] / clean_name
+    state = pf.read_frame_state(pf_config["_state_dir"] / "state.json")
+    if target.is_file() and state.get("last_image") == clean_name and state.get("last_view") != "dashboard":
+        _write_preview_cache(pf_config, view="photo", photo_name=clean_name)
+        _signal_photoframe_process()
     return describe_photo(target, pf_config) if target.is_file() else {"name": clean_name, **entry}
 
 
@@ -277,22 +281,63 @@ def render_live_preview_png(
     return buf.getvalue()
 
 
+def _write_preview_cache(pf_config: dict[str, Any], *, view: str, photo_name: Optional[str] = None) -> None:
+    """Immediately render and cache latest_preview.png so the Web UI updates without waiting 32s."""
+    state_dir: Path = pf_config["_state_dir"]
+    state = pf.read_frame_state(state_dir / "state.json")
+    weather = pf.get_weather(pf_config, offline=True)
+    if weather is None or (view == "dashboard" and not getattr(weather, "hourly", None)):
+        weather = pf.get_weather(pf_config, offline=False)
+
+    if view == "dashboard":
+        offset = int(state.get("wisdom_offset") or 0)
+        wisdom = pfd.select_daily_wisdom(pf_config, state_dir, offset=offset, offline=True)
+        frame = pfd.render_dashboard_frame(weather, wisdom, pf_config)
+    else:
+        images = pf.list_images(pf_config["_image_dir"])
+        chosen = None
+        if photo_name:
+            candidate = pf_config["_image_dir"] / photo_name
+            if candidate.is_file():
+                chosen = candidate
+        if chosen is None:
+            chosen = pf.choose_next(
+                images,
+                last_name=None,
+                requested_name=state.get("next_image") or state.get("last_image"),
+                pinned_name=state.get("pinned_image"),
+            )
+        fonts = pf.load_fonts(pf_config)
+        resolver = pf.PlaceResolver(state_dir, enabled=True, offline=True)
+        meta = pf.build_photo_meta(chosen, pf_config, resolver) if chosen else pf.PhotoMeta()
+        frame = pf.render_frame(chosen, meta, weather, pf_config, fonts)
+
+    with suppress(OSError):
+        pf._save_latest_preview(state_dir, frame)
+
+
 def trigger_frame_action(
     pf_config: dict[str, Any],
     *,
     action: str = "next",
     photo_name: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Queue a photo/dashboard/pin state change and signal inky-photoframe to refresh."""
+    """Queue a photo/dashboard/pin state change, update preview immediately, and signal panel."""
     state_path = pf_config["_state_dir"] / "state.json"
     state = pf.read_frame_state(state_path)
+    target_view = "photo"
+    chosen_photo: Optional[str] = None
 
     if action == "show" and photo_name:
         clean = validate_photo_name(photo_name)
         if not (pf_config["_image_dir"] / clean).is_file():
             raise FileNotFoundError(f"Photo not found: {clean}")
+        state.pop("pinned_image", None)
         state["next_image"] = clean
         state["force_view"] = "photo"
+        state["last_image"] = clean
+        state["last_view"] = "photo"
+        chosen_photo = clean
     elif action == "pin" and photo_name:
         clean = validate_photo_name(photo_name)
         if not (pf_config["_image_dir"] / clean).is_file():
@@ -300,31 +345,52 @@ def trigger_frame_action(
         state["pinned_image"] = clean
         state["next_image"] = clean
         state["force_view"] = "photo"
+        state["last_image"] = clean
+        state["last_view"] = "photo"
+        chosen_photo = clean
     elif action == "unpin":
         state.pop("pinned_image", None)
+        pf.write_json_atomic(state_path, state)
+        return {"signaled": True, "pinned_image": "", "next_image": "", "force_view": ""}
     elif action == "next":
         state.pop("pinned_image", None)
-        state.pop("next_image", None)
+        images = pf.list_images(pf_config["_image_dir"])
+        picked = pf.choose_next(images, last_name=state.get("last_image"))
+        if picked is not None:
+            state["next_image"] = picked.name
+            state["last_image"] = picked.name
+            chosen_photo = picked.name
         state["force_view"] = "photo"
+        state["last_view"] = "photo"
     elif action == "dashboard":
         state.pop("pinned_image", None)
         state.pop("next_image", None)
         state["force_view"] = "dashboard"
+        state["last_view"] = "dashboard"
+        target_view = "dashboard"
     elif action == "shuffle_wisdom":
+        # Clear any sticky custom_text override so shuffling always advances to a new fact/quote
+        if (pf_config.get("dashboard") or {}).get("custom_text"):
+            vm.update_local_config(pf_config["_config_path"], {"dashboard": {"custom_text": ""}})
+            pf_config = pf.load_config(pf_config["_config_path"])
         state.pop("pinned_image", None)
         state.pop("next_image", None)
         state["wisdom_offset"] = int(state.get("wisdom_offset") or 0) + 1
         state["force_view"] = "dashboard"
+        state["last_view"] = "dashboard"
+        target_view = "dashboard"
     else:
         raise ValueError(f"Unsupported frame action: {action}")
 
     pf.write_json_atomic(state_path, state)
+    _write_preview_cache(pf_config, view=target_view, photo_name=chosen_photo)
     signaled = _signal_photoframe_process()
     return {
         "signaled": signaled,
         "pinned_image": state.get("pinned_image") or "",
         "next_image": state.get("next_image") or "",
         "force_view": state.get("force_view") or "",
+        "last_view": state.get("last_view") or target_view,
     }
 
 
@@ -356,13 +422,79 @@ def update_dashboard_settings(pf_config: dict[str, Any], payload: dict[str, Any]
 
     vm.update_local_config(pf_config["_config_path"], {"dashboard": patch})
     reloaded = pf.load_config(pf_config["_config_path"])
+
+    state_path = reloaded["_state_dir"] / "state.json"
+    state = pf.read_frame_state(state_path)
+    new_mode = reloaded["dashboard"]["mode"]
+    show_dash = new_mode == "dashboard" or (
+        new_mode != "photos" and bool(patch.get("custom_text") or "content" in patch)
+    )
+    if show_dash:
+        state.pop("pinned_image", None)
+        state.pop("next_image", None)
+        state["force_view"] = "dashboard"
+        state["last_view"] = "dashboard"
+        pf.write_json_atomic(state_path, state)
+        _write_preview_cache(reloaded, view="dashboard")
+    elif new_mode == "photos":
+        state["force_view"] = "photo"
+        state["last_view"] = "photo"
+        pf.write_json_atomic(state_path, state)
+        _write_preview_cache(reloaded, view="photo")
+
     if payload.get("refresh_now", True):
         _signal_photoframe_process()
     return reloaded["dashboard"]
 
 
 def _signal_photoframe_process() -> bool:
-    """Send SIGUSR1 to the running photoframe.py process (same user or via sudo systemctl)."""
+    """Wake or restart inky-photoframe so the physical e-ink screen updates immediately."""
+    # 1. Prefer systemd USR1 when inky-photoframe.service is active
+    if shutil.which("systemctl"):
+        active = subprocess.run(
+            ["systemctl", "is-active", "--quiet", "inky-photoframe.service"],
+            capture_output=True,
+            check=False,
+        )
+        if active.returncode == 0:
+            # Try direct signal if running as same user via MainPID
+            pid_res = subprocess.run(
+                ["systemctl", "show", "-p", "MainPID", "--value", "inky-photoframe.service"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if pid_res.returncode == 0 and hasattr(signal, "SIGUSR1"):
+                with suppress(ValueError, OSError):
+                    main_pid = int(pid_res.stdout.strip())
+                    if main_pid > 1:
+                        os.kill(main_pid, signal.SIGUSR1)
+                        return True
+            kill_cmd = (
+                ["systemctl", "kill", "-s", "USR1", "--kill-who=main", "inky-photoframe.service"]
+                if os.geteuid() == 0
+                else ["sudo", "-n", "systemctl", "kill", "-s", "USR1", "--kill-who=main", "inky-photoframe.service"]
+            )
+            if subprocess.run(kill_cmd, capture_output=True, check=False).returncode == 0:
+                return True
+            restart_cmd = (
+                ["systemctl", "restart", "inky-photoframe.service"]
+                if os.geteuid() == 0
+                else ["sudo", "-n", "systemctl", "restart", "inky-photoframe.service"]
+            )
+            if subprocess.run(restart_cmd, capture_output=True, check=False).returncode == 0:
+                return True
+        else:
+            # Service exists on Pi but was stopped — start it so screen updates!
+            start_cmd = (
+                ["systemctl", "restart", "inky-photoframe.service"]
+                if os.geteuid() == 0
+                else ["sudo", "-n", "systemctl", "restart", "inky-photoframe.service"]
+            )
+            if subprocess.run(start_cmd, capture_output=True, check=False).returncode == 0:
+                return True
+
+    # 2. Fallback for manual non-systemd runs: signal photoframe.py by PID
     if hasattr(signal, "SIGUSR1") and shutil.which("pgrep"):
         res = subprocess.run(["pgrep", "-f", "photoframe.py"], capture_output=True, text=True, check=False)
         if res.returncode == 0:
@@ -375,12 +507,4 @@ def _signal_photoframe_process() -> bool:
                         sent = True
             if sent:
                 return True
-    if shutil.which("systemctl"):
-        res = subprocess.run(
-            ["sudo", "-n", "systemctl", "kill", "-s", "USR1", "--kill-who=main", "inky-photoframe.service"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return res.returncode == 0
     return False

@@ -206,32 +206,64 @@
       $("#meta-modal").classList.remove("hidden");
       return;
     }
-    if (act === "delete") {
-      if (!confirm(`Delete ${name} from the photo frame?`)) return;
-      await api("/api/photos/delete", { method: "POST", json: { name } });
-      showToast(`Deleted ${name}`);
-      await loadGallery();
+    btn.disabled = true;
+    try {
+      if (act === "delete") {
+        if (!confirm(`Delete ${name} from the photo frame?`)) return;
+        await api("/api/photos/delete", { method: "POST", json: { name } });
+        showToast(`Deleted ${name}`);
+        await loadGallery();
+        refreshPreviewImage();
+        return;
+      }
+      const res = await api("/api/frame/action", { method: "POST", json: { action: act, name } });
+      const panelMsg = res.signaled ? "(e-ink panel refreshing ~30s)" : "(preview updated; check inky-photoframe service)";
+      showToast(act === "pin" ? `Pinned ${name} ${panelMsg}` : `Showing ${name} ${panelMsg}`);
       refreshPreviewImage();
-      return;
+      await loadGallery();
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      btn.disabled = false;
     }
-    await api("/api/frame/action", { method: "POST", json: { action: act, name } });
-    showToast(act === "pin" ? `Pinned ${name} to frame` : `Refreshing frame with ${name}…`);
-    refreshPreviewImage(name);
-    setTimeout(loadGallery, 1200);
   }
 
   $("#btn-show-dash").addEventListener("click", async () => {
-    await api("/api/frame/action", { method: "POST", json: { action: "dashboard" } });
-    showToast("Displaying Hourly Weather + Daily Wisdom on e-ink screen!");
-    refreshPreviewImage("", "dashboard");
-    setTimeout(loadGallery, 1200);
+    const btn = $("#btn-show-dash");
+    btn.disabled = true;
+    try {
+      const res = await api("/api/frame/action", { method: "POST", json: { action: "dashboard" } });
+      showToast(
+        res.signaled
+          ? "Sending Weather + Daily Quote to e-ink panel (~30s refresh)…"
+          : "Preview updated (inky-photoframe service not signaled)"
+      );
+      refreshPreviewImage();
+      await loadGallery();
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   $("#btn-shuffle-wisdom").addEventListener("click", async () => {
-    await api("/api/frame/action", { method: "POST", json: { action: "shuffle_wisdom" } });
-    showToast("Picked a new Fun Fact / Quote and refreshing screen!");
-    refreshPreviewImage("", "dashboard");
-    setTimeout(loadGallery, 1200);
+    const btn = $("#btn-shuffle-wisdom");
+    btn.disabled = true;
+    try {
+      const res = await api("/api/frame/action", { method: "POST", json: { action: "shuffle_wisdom" } });
+      showToast(
+        res.signaled
+          ? "Picked new Fact/Quote & refreshing e-ink panel (~30s)…"
+          : "Picked new Fact/Quote (inky-photoframe service not signaled)"
+      );
+      refreshPreviewImage();
+      await loadGallery();
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   $("#dash-mode").addEventListener("change", () => {
@@ -252,27 +284,41 @@
           refresh_now: true,
         },
       });
-      showToast(`Saved mode '${mode}' and signaled e-ink refresh!`);
-      if (mode === "dashboard") refreshPreviewImage("", "dashboard");
-      setTimeout(loadGallery, 1200);
+      showToast(`Saved settings ('${mode}') & signaled e-ink refresh (~30s)!`);
+      refreshPreviewImage();
+      await loadGallery();
     } catch (err) {
       showToast(err.message, true);
     }
   });
 
   $("#btn-next-photo").addEventListener("click", async () => {
-    await api("/api/frame/action", { method: "POST", json: { action: "next" } });
-    showToast("Triggered random photo refresh on e-ink panel!");
-    setTimeout(() => {
-      loadGallery();
+    const btn = $("#btn-next-photo");
+    btn.disabled = true;
+    try {
+      const res = await api("/api/frame/action", { method: "POST", json: { action: "next" } });
+      showToast(
+        res.signaled
+          ? "Picked next photo & refreshing e-ink panel (~30s)…"
+          : "Picked next photo (inky-photoframe service not signaled)"
+      );
       refreshPreviewImage();
-    }, 1500);
+      await loadGallery();
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   $("#btn-unpin-photo").addEventListener("click", async () => {
-    await api("/api/frame/action", { method: "POST", json: { action: "unpin" } });
-    showToast("Unpinned photo; 20m rotation resumed.");
-    loadGallery();
+    try {
+      await api("/api/frame/action", { method: "POST", json: { action: "unpin" } });
+      showToast("Unpinned photo; rotation resumed.");
+      await loadGallery();
+    } catch (err) {
+      showToast(err.message, true);
+    }
   });
 
   $("#btn-refresh-gallery").addEventListener("click", () => {

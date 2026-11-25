@@ -1349,7 +1349,7 @@ def _wait_until(deadline, stop_event, refresh_event=None):
         if remaining <= 0:
             return
         if refresh_event is not None:
-            refresh_event.wait(min(remaining, 5.0))
+            refresh_event.wait(min(remaining, 1.0))
         else:
             stop_event.wait(min(remaining, 30.0))
 
@@ -1405,22 +1405,33 @@ def run_cycle(config, args, fonts, resolver, display):
         LOG.info("Preview written to %s (%dx%d)", output, frame.width, frame.height)
         return
 
+    # Persist state and preview BEFORE the ~32s blocking hardware refresh so
+    # new clicks in the Web UI during show_frame() are never overwritten!
     with suppress(OSError):
         _save_latest_preview(config["_state_dir"], frame)
-    show_frame(display, frame, config, saturation_override=saturation_override)
 
+    latest_state = read_frame_state(state_path)
     if use_dashboard:
-        new_state = {k: v for k, v in state.items() if k not in ("force_view", "next_image")}
-        new_state["last_view"] = "dashboard"
+        # Only clear force_view if no newer photo request arrived while rendering
+        if latest_state.get("force_view") == "dashboard":
+            latest_state.pop("force_view", None)
+        latest_state["last_view"] = "dashboard"
         with suppress(OSError):
-            write_json_atomic(state_path, new_state)
+            write_json_atomic(state_path, latest_state)
+    elif photo is not None:
+        if latest_state.get("next_image") == photo.name:
+            latest_state.pop("next_image", None)
+        if latest_state.get("force_view") == "photo":
+            latest_state.pop("force_view", None)
+        latest_state["last_image"] = photo.name
+        latest_state["last_view"] = "photo"
+        with suppress(OSError):
+            write_json_atomic(state_path, latest_state)
+
+    show_frame(display, frame, config, saturation_override=saturation_override)
+    if use_dashboard:
         LOG.info("Displayed Weather + Wisdom dashboard")
     else:
-        if photo is not None:
-            try:
-                write_last_image(state_path, photo.name)
-            except OSError as exc:
-                LOG.warning("Could not save state: %s", exc)
         LOG.info("Displayed %s", photo.name if photo is not None else "(placeholder)")
 
 

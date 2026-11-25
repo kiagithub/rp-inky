@@ -73,6 +73,14 @@ fi
 
 chmod +x "$WEBUI_DIR/server.py"
 
+# Ensure photoframe state & image directories are owned by RUN_USER (in case photoframe was ever run with sudo)
+REPO_DIR="$(dirname "$WEBUI_DIR")"
+mkdir -p "$REPO_DIR/photoframe/.state" "$REPO_DIR/photoframe/image" "$WEBUI_DIR/.state"
+sudo chown -R "$RUN_USER:$RUN_USER" "$REPO_DIR/photoframe/.state" "$REPO_DIR/photoframe/image" "$WEBUI_DIR/.state"
+if [ -f "$REPO_DIR/photoframe/config.local.json" ]; then
+    sudo chown "$RUN_USER:$RUN_USER" "$REPO_DIR/photoframe/config.local.json"
+fi
+
 if [ -n "$PORT" ] || [ -n "$PIN" ]; then
     "$PYTHON" - "$WEBUI_DIR/config.json" "$PORT" "$PIN" <<'PY'
 import sys
@@ -98,8 +106,8 @@ trap 'rm -f "$SUDOERS_TMP"' EXIT
 WG_BIN="$(command -v wg || echo /usr/bin/wg)"
 SYSTEMCTL_BIN="$(command -v systemctl || echo /bin/systemctl)"
 cat >"$SUDOERS_TMP" <<EOF
-# Managed by rp-inky webui installer — allows Web UI user to control rp-vpn & signal photoframe
-$RUN_USER ALL=(root) NOPASSWD: /usr/local/bin/rp-vpn *, $WG_BIN show *, $SYSTEMCTL_BIN kill -s USR1 --kill-who=main inky-photoframe.service
+# Managed by rp-inky webui installer — allows Web UI user to control rp-vpn & signal/restart photoframe
+$RUN_USER ALL=(root) NOPASSWD: /usr/local/bin/rp-vpn *, $WG_BIN show *, $SYSTEMCTL_BIN kill -s USR1 --kill-who=main inky-photoframe.service, $SYSTEMCTL_BIN restart inky-photoframe.service
 EOF
 chmod 440 "$SUDOERS_TMP"
 sudo visudo -cf "$SUDOERS_TMP" >/dev/null
