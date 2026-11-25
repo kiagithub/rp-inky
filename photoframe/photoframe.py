@@ -861,9 +861,20 @@ def resolve_weather_location(config, offline=False):
     return location
 
 
+def _import_dashboard():
+    """Import sibling dashboard module whether run as a package or direct script."""
+    if __package__:
+        from . import dashboard
+
+        return dashboard
+    import dashboard
+
+    return dashboard
+
+
 def parse_weather(payload, step_hours=3, use_24h=False):
     """Build a Weather (including hourly forecast + rain chance) from Open-Meteo."""
-    from photoframe.dashboard import extract_hourly_slots
+    extract_hourly_slots = _import_dashboard().extract_hourly_slots
 
     current = payload.get("current") if isinstance(payload, dict) else None
     current = current if isinstance(current, dict) else {}
@@ -1365,7 +1376,7 @@ def _save_latest_preview(state_dir, frame):
 
 def run_cycle(config, args, fonts, resolver, display):
     """Choose, compose and display either a photo or the Weather + Wisdom dashboard."""
-    from photoframe import dashboard as pfd
+    pfd = _import_dashboard()
 
     images = list_images(config["_image_dir"])
     LOG.info("Found %d photo(s) in %s", len(images), config["_image_dir"])

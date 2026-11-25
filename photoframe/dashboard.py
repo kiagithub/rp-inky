@@ -128,11 +128,22 @@ def select_daily_wisdom(
     return dict(pool[idx])
 
 
+def _import_photoframe():
+    """Import sibling photoframe module whether run as a package or direct script."""
+    if __package__:
+        from . import photoframe
+
+        return photoframe
+    import photoframe
+
+    return photoframe
+
+
 def _fetch_or_load_online_wisdom(state_dir: Path, ref_day: date, content_filter: str) -> Optional[dict[str, str]]:
     """Fetch a short quote or fun fact once per day, caching it on disk."""
     import json
 
-    from photoframe import photoframe as pf
+    pf = _import_photoframe()
 
     cache_path = Path(state_dir) / "daily_wisdom.json"
     day_key = f"{ref_day.isoformat()}:{content_filter}"
@@ -448,7 +459,7 @@ def render_dashboard_frame(
     now: Optional[datetime] = None,
 ) -> Image.Image:
     """Compose a bold 480x800 Hourly Weather + Rain Chance + Daily Quote/Fact card."""
-    from photoframe import photoframe as pf
+    pf = _import_photoframe()
 
     canvas = Image.new("RGB", (WIDTH, HEIGHT), WHITE)
     draw = ImageDraw.Draw(canvas)

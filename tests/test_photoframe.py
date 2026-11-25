@@ -519,3 +519,34 @@ def test_schedule_window_and_mode_selection(tmp_path):
     assert pf.should_show_dashboard(cfg, {"last_view": "dashboard"}, images_available=True) is False
 
 
+def test_direct_script_execution_matches_systemd_service(tmp_path):
+    """Ensure running photoframe/photoframe.py directly (as systemd does) imports dashboard cleanly."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = Path(pf.__file__).resolve()
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"image_dir": str(tmp_path / "image"), "state_dir": str(tmp_path / ".state")}), encoding="utf-8")
+    out_dash = tmp_path / "dash.png"
+    out_photo = tmp_path / "photo.png"
+
+    env = dict(os.environ)
+    # Strip repo root from PYTHONPATH so sys.path[0] is strictly photoframe/ just like systemd
+    env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p and Path(p).resolve() != script.parent.parent)
+
+    for mode, out_path in (("dashboard", out_dash), ("photos", out_photo)):
+        res = subprocess.run(
+            [sys.executable, str(script), "--config", str(cfg), "--mode", mode, "--preview", str(out_path), "--offline"],
+            cwd=str(script.parent),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res.returncode == 0, res.stderr
+        assert out_path.is_file()
+
+
+
