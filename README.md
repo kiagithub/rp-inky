@@ -58,6 +58,9 @@ rp-inky/
 ├── tailscale/        Tailscale remote access (subnet router + exit node) installer & guide
 │   ├── install-tailscale.sh  clean Pi OS installer (--accept-dns=false, LAN subnet route)
 │   └── README.md     remote Web Hub, AdGuard Home & subnet route approval guide
+├── log2ram/          SD card lifespan protector (128 MB /var/log RAM buffer + journald cap)
+│   ├── install-log2ram.sh    clean Pi OS installer & tuning script
+│   └── README.md     setup, verification & uninstall guide
 ├── tests/            offline unit tests (photo frame + VPN + Web Hub)
 ├── install.sh        Raspberry Pi photo frame setup script
 ├── pyproject.toml

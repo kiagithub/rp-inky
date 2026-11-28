@@ -1101,6 +1101,18 @@
       setHealthItem("#health-power", "⚡ Power: OK", "ok");
     }
 
+    const l2r = h.log2ram || {};
+    const l2rEl = $("#health-log2ram");
+    if (l2rEl) {
+      if (l2r.active && l2r.pct != null) {
+        const lvl = l2r.pct >= 90 ? "crit" : l2r.pct >= 75 ? "warn" : "ok";
+        l2rEl.classList.remove("hidden");
+        setHealthItem("#health-log2ram", `🪵 Log2RAM: ${l2r.used_mb}/${l2r.total_mb}M (${Math.round(l2r.pct)}%)`, lvl);
+      } else {
+        l2rEl.classList.add("hidden");
+      }
+    }
+
     const loadPart = h.load_1m != null ? ` • Load ${h.load_1m.toFixed(2)}` : "";
     setHealthItem("#health-uptime", `⏱ Up: ${h.uptime_human || "—"}${loadPart}`);
   }

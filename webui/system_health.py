@@ -163,12 +163,41 @@ def format_uptime(seconds: Optional[int]) -> str:
     return f"{days}d {hrs % 24}h"
 
 
+def parse_log2ram_mounts(mounts_text: str) -> bool:
+    """Return True if a log2ram mount is active on /var/log."""
+    for line in mounts_text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "/var/log" and "log2ram" in parts[0].lower():
+            return True
+    return False
+
+
+def read_log2ram_info() -> dict[str, Any]:
+    """Check whether log2ram is mounted on /var/log and report its RAM buffer usage."""
+    mounts_path = Path("/proc/mounts")
+    active = False
+    if mounts_path.is_file():
+        with suppress(OSError):
+            active = parse_log2ram_mounts(mounts_path.read_text(encoding="utf-8", errors="ignore"))
+    if not active:
+        return {"active": False, "used_mb": 0, "total_mb": 0, "pct": None}
+    try:
+        usage = shutil.disk_usage("/var/log")
+        total_mb = round(usage.total / (1024**2))
+        used_mb = round(usage.used / (1024**2))
+        pct = round((usage.used * 100.0) / usage.total, 1) if usage.total > 0 else 0.0
+        return {"active": True, "used_mb": used_mb, "total_mb": total_mb, "pct": pct}
+    except OSError:
+        return {"active": True, "used_mb": 0, "total_mb": 0, "pct": None}
+
+
 def get_system_health(disk_path: str = "/") -> dict[str, Any]:
     """Collect a full, fast snapshot of Raspberry Pi system health."""
     cpu_temp_c = read_cpu_temp_c()
     memory = read_memory_info()
     disk = read_disk_info(disk_path)
     throttled = read_throttled_info()
+    log2ram = read_log2ram_info()
     uptime_sec = read_uptime_seconds()
 
     load_1m: Optional[float] = None
@@ -199,4 +228,5 @@ def get_system_health(disk_path: str = "/") -> dict[str, Any]:
         "memory": memory,
         "disk": disk,
         "throttled": throttled,
+        "log2ram": log2ram,
     }

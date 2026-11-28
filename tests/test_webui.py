@@ -483,6 +483,8 @@ def test_system_health_endpoint_and_watchdog_thermal_disk_alerts(tmp_path, monke
     assert sh.parse_throttled_mask(0x0)["status"] == "ok"
     assert sh.parse_throttled_mask(0x50000)["status"] == "warn"
     assert sh.parse_throttled_mask(0x5)["status"] == "crit"
+    assert sh.parse_log2ram_mounts("log2ram /var/log tmpfs rw,nosuid,nodev 0 0\n") is True
+    assert sh.parse_log2ram_mounts("/dev/mmcblk0p2 / ext4 rw 0 0\n") is False
 
     alerts = []
     monkeypatch.setattr(wm, "send_notifications", lambda _cfg, title, msg: (alerts.append((title, msg)), [])[1])
