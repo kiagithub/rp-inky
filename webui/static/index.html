@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0f172a">
   <title>rp-inky Hub — Frame • VPN • Network • Watchdog • WoL</title>
-  <link rel="stylesheet" href="/style.css?v=4">
+  <link rel="stylesheet" href="/style.css?v=5">
 </head>
 <body>
   <header class="topbar">
@@ -14,7 +14,7 @@
       <span class="brand-dot"></span>
       <div>
         <h1>rp-inky Hub</h1>
-        <p class="subtitle">Photo Frame • UK VPN • Network • Watchdog • Wake-on-LAN</p>
+        <p class="subtitle">Photo Frame • VPN • Network • Watchdog • Wake-on-LAN</p>
       </div>
     </div>
     <div class="status-pills">
@@ -36,7 +36,7 @@
 
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="photos">🖼 Photos</button>
-    <button class="tab" data-tab="vpn">🛡 UK VPN</button>
+    <button class="tab" data-tab="vpn">🛡 VPN</button>
     <button class="tab" data-tab="network">🌐 Network</button>
     <button class="tab" data-tab="monitor">📡 Watchdog</button>
     <button class="tab" data-tab="wol">⚡ Wake-on-LAN</button>
@@ -160,21 +160,54 @@
       </div>
     </section>
 
-    <!-- ==================== TAB 2: UK VPN ==================== -->
+    <!-- ==================== TAB 2: VPN ==================== -->
     <section id="tab-vpn" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 id="vpn-country-banner">🌐 Active Country: Checking…</h2>
+            <p class="muted small" id="vpn-country-sub">Tap any country below to switch your VPN exit location immediately.</p>
+          </div>
+          <span id="vpn-state-badge" class="pill pill-neutral">Checking…</span>
+        </div>
+        <div id="vpn-country-list" class="country-grid"></div>
+      </div>
+
       <div class="grid-two">
         <div class="card">
           <div class="card-header">
-            <h2>Surfshark Tunnel &amp; Hotspot</h2>
-            <span id="vpn-state-badge" class="pill pill-neutral">Checking…</span>
+            <h2>VPN Tunnel &amp; Hotspot</h2>
           </div>
           <div class="kv-grid" id="vpn-kv"></div>
           <div class="btn-row wrap-row mt">
-            <button class="btn btn-primary" data-vpn-action="next">⟳ Next UK Server</button>
+            <button class="btn btn-primary" data-vpn-action="next">⟳ Next Server</button>
             <button class="btn btn-ghost" data-vpn-action="restart">Restart</button>
             <button class="btn btn-ghost" data-vpn-action="up">Start</button>
             <button class="btn btn-danger" data-vpn-action="down">Stop</button>
           </div>
+
+          <hr class="divider">
+          <h3>Wi-Fi Hotspot Name &amp; Password</h3>
+          <p class="muted small">Rename your VPN Wi-Fi network or update its WPA2 password (devices will need to reconnect).</p>
+          <form id="vpn-hotspot-form" class="stack-sm mt-sm">
+            <div class="row-inputs">
+              <div>
+                <label class="field-label">Wi-Fi Network Name (SSID)</label>
+                <input type="text" id="hotspot-ssid" maxlength="32" placeholder="e.g. Home-VPN">
+              </div>
+              <div>
+                <label class="field-label">Wi-Fi Password (8–63 chars, optional)</label>
+                <input type="password" id="hotspot-pass" minlength="8" maxlength="63" placeholder="Leave blank to keep current">
+              </div>
+            </div>
+            <div class="btn-row wrap-row">
+              <button type="submit" id="btn-save-hotspot" class="btn btn-primary btn-sm">Save &amp; Restart Hotspot</button>
+              <label class="checkbox-row small">
+                <input type="checkbox" id="hotspot-show-pass">
+                <span>Show password</span>
+              </label>
+            </div>
+          </form>
         </div>
 
         <div class="card">
@@ -182,7 +215,7 @@
             <h2>Speed Benchmark (25 MB)</h2>
             <button id="btn-run-bench" class="btn btn-primary btn-sm">Run Speed Test</button>
           </div>
-          <p class="muted">Compares direct Ethernet WAN vs. encrypted Surfshark tunnel directly on the Pi 4.</p>
+          <p class="muted">Compares direct Ethernet WAN vs. encrypted VPN tunnel directly on the Pi 4.</p>
           <div id="bench-results" class="bench-box">
             <div class="bench-row">
               <span>Direct WAN (<code id="bench-wan-iface">eth0</code>)</span>
@@ -196,7 +229,7 @@
           </div>
 
           <hr class="divider">
-          <h3>Import Surfshark Config (.conf / .ovpn)</h3>
+          <h3>Import VPN Config (.conf / .ovpn)</h3>
           <form id="vpn-upload-form" class="row-form mt-sm">
             <input type="file" id="vpn-file-input" accept=".conf,.ovpn" multiple required>
             <button type="submit" class="btn btn-ghost">Import</button>
@@ -206,8 +239,8 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Imported VPN Profiles</h2>
-          <span class="muted small">Tap any profile to switch immediately</span>
+          <h2>All Imported Server Profiles</h2>
+          <span class="muted small">Tap any server to connect immediately</span>
         </div>
         <div id="vpn-profiles-list" class="profile-grid"></div>
       </div>
@@ -291,7 +324,7 @@
     <section id="tab-monitor" class="tab-panel">
       <div class="card">
         <div class="card-header">
-          <h2>ISP, UK VPN &amp; Smart-Home Uptime</h2>
+          <h2>ISP, VPN &amp; Smart-Home Uptime</h2>
           <button id="btn-check-now" class="btn btn-primary btn-sm">Probe All Now</button>
         </div>
         <div id="monitor-list" class="monitor-list"></div>
@@ -474,6 +507,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=7"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>

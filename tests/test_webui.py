@@ -598,5 +598,64 @@ def test_tailscale_status_parser_and_endpoint(tmp_path, monkeypatch):
     assert json.loads(body.decode("utf-8"))["tailscale_ip"] == "100.88.12.34"
 
 
+def test_vpn_country_switcher_and_hotspot_update_endpoints(tmp_path, monkeypatch):
+    from webui import vpn_bridge as wb
+
+    assert wb.country_meta("uk") == ("GB", "United Kingdom", "🇬🇧")
+    assert wb.country_meta("ch") == ("CH", "Switzerland", "🇨🇭")
+    assert wb.country_meta("mx") == ("MX", "Mexico", "🇲🇽")
+
+    for sub in ("photoframe", "vpn", "webui"):
+        (tmp_path / sub).mkdir()
+    profiles_dir = tmp_path / "vpn" / "profiles"
+    profiles_dir.mkdir(parents=True)
+    for fname, ep in (("uk-lon.conf", "uk-lon.prod.surfshark.com:51820"), ("ch-zur.conf", "ch-zur.prod.surfshark.com:51820")):
+        (profiles_dir / fname).write_text(
+            f"[Interface]\nPrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAddress = 10.14.0.2/16\n"
+            f"[Peer]\nPublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=\nEndpoint = {ep}\nAllowedIPs = 0.0.0.0/0\n",
+            encoding="utf-8",
+        )
+
+    cfg_path = tmp_path / "webui" / "config.json"
+    cfg_path.write_text(json.dumps({"port": 8080}), encoding="utf-8")
+    ctx = ws.AppContext(cfg_path)
+
+    invoked = []
+    monkeypatch.setattr(ctx.vpn_bridge, "_run_privileged", lambda args, timeout=30: (invoked.append(args), "")[1])
+    monkeypatch.setattr(wb.vm, "interface_exists", lambda _iface: False)
+    monkeypatch.setattr(wb.vm, "get_interface_ipv4", lambda _iface: "192.168.86.30")
+
+    # Switch country CH -> picks ch-zur
+    payload = json.dumps({"country": "CH"}).encode()
+    req = (
+        b"POST /api/vpn/country HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        b"X-Requested-With: rp-inky\r\n"
+        + f"Content-Length: {len(payload)}\r\n\r\n".encode()
+        + payload
+    )
+    code, body = _dispatch_http(ctx, req)
+    assert code == 200
+    assert invoked[-1] == ["use", "ch-zur"]
+    status = json.loads(body.decode("utf-8"))
+    assert {c["code"] for c in status["countries"]} == {"GB", "CH"}
+
+    # Update hotspot SSID & password
+    hp_payload = json.dumps({"ssid": "Home-VPN", "passphrase": "SuperSecretPassword123"}).encode()
+    hp_req = (
+        b"POST /api/vpn/hotspot HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        b"X-Requested-With: rp-inky\r\n"
+        + f"Content-Length: {len(hp_payload)}\r\n\r\n".encode()
+        + hp_payload
+    )
+    code2, _ = _dispatch_http(ctx, hp_req)
+    assert code2 == 200
+    assert invoked[-1] == ["configure-hotspot", "--ssid", "Home-VPN", "--passphrase", "SuperSecretPassword123"]
+
+
+
 
 

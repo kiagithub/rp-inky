@@ -67,7 +67,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "hotspot": {
         "enabled": True,
         "interface": "wlan0",
-        "ssid": "RP-UK-VPN",
+        "ssid": "Home-VPN",
         "passphrase": "",
         "country_code": "US",
         "band": "5g",
@@ -1862,7 +1862,7 @@ def run_watchdog(config: dict[str, Any]) -> int:
         candidates = select_failover_candidates(
             profiles,
             current_name=profile.name,
-            preferred_country=config["preferred_country"],
+            preferred_country=profile.country or config["preferred_country"],
             prefer_protocol=config["prefer_protocol"],
         )
         next_profile = next((item for item in candidates if item.name != profile.name), None)
@@ -1981,20 +1981,17 @@ def cmd_use(config: dict[str, Any], profile_name: str, no_restart: bool = False)
 
 
 def cmd_next(config: dict[str, Any]) -> int:
-    """Switch to the next preferred UK profile."""
+    """Switch to the next available VPN profile."""
     require_root()
     profiles = discover_profiles(config["_profiles_dir"])
     current = resolve_active_profile(config, profiles)
-    candidates = select_failover_candidates(
-        profiles,
-        current_name=current.name,
-        preferred_country=config["preferred_country"],
-        prefer_protocol=config["prefer_protocol"],
-    )
-    next_prof = next((p for p in candidates if p.name != current.name), current)
-    if next_prof.name == current.name:
-        print(f"Only one matching profile available ('{current.name}'); restarting it.")
-    return cmd_use(config, next_prof.name)
+    ordered = sorted(profiles, key=lambda p: (0 if p.protocol == config["prefer_protocol"] else 1, p.name))
+    names = [p.name for p in ordered]
+    if current.name in names and len(names) > 1:
+        next_name = names[(names.index(current.name) + 1) % len(names)]
+        return cmd_use(config, next_name)
+    print(f"Only one profile available ('{current.name}'); restarting it.")
+    return cmd_use(config, current.name)
 
 
 def cmd_up(config: dict[str, Any]) -> int:

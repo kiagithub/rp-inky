@@ -17,9 +17,10 @@ A lightweight, zero-bloat web control panel (`http://<pi-ip>:8080`) that runs al
    - **1-Tap "Show"**, **"Pin"**, **"Weather & Quote"**, or **"New Fact/Quote"** triggers an immediate refresh on the e-ink screen via `SIGUSR1` (no SSH or service restart required).
    - Switch display modes (`Alternate`, `Weather & Quote Always On`, `Scheduled Hours`, or `Photos Only`) and enter custom notes/quotes up to 300 characters.
 
-3. **1-Tap Surfshark UK VPN Control (`🛡 UK VPN`)**
-   - View live tunnel status, public UK exit IP/city, WireGuard handshake age, RX/TX transfer, connected 5 GHz Wi-Fi Hotspot clients + PHY link speed, and your 500M LAN Gateway IP.
-   - Switch between imported Surfshark configs (`uk-lon`, `uk-man`, `us-nyc`, etc.) with one tap, upload new `.conf` / `.ovpn` files directly from your browser, or run a live **25 MB WAN vs. VPN speed benchmark**.
+3. **Multi-Country VPN & Wi-Fi Hotspot Control (`🛡 VPN`)**
+   - Displays the **active VPN country** (with flag, city, and public exit IP) right in the top bar and VPN tab.
+   - **1-Tap Country Switcher**: Switch between imported countries (e.g. `🇬🇧 UK`, `🇨🇭 Switzerland`, `🇨🇿 Czechia`, `🇪🇸 Spain`, `🇮🇸 Iceland`, `🇲🇽 Mexico`, `🇸🇪 Sweden`) with a single tap, upload new `.conf` / `.ovpn` files directly from your browser, or run a live **25 MB WAN vs. VPN speed benchmark**.
+   - **Wi-Fi Hotspot Name & Password**: Rename your 5 GHz VPN Wi-Fi network (SSID) and set or change its WPA2 password right from the browser.
 
 4. **Home Network & VPN Hotspot Scanner (`🌐 Network`)**
    - **VPN Hotspot Clients (`wlan0`)**: Shows every device connected to `UK-Frame-VPN` with **live download/upload speed (Kbps/Mbps)**, **total session data (↓ / ↑)**, **Wi-Fi signal strength (dBm)**, and connected duration.

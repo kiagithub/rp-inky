@@ -3,8 +3,8 @@
 A multi-purpose Raspberry Pi 4 appliance combining:
 
 1. **E-ink digital photo frame & Weather/Quote dashboard** for the **Inky Impression 7.3" (PIM773)** (`photoframe/`).
-2. **Always-On high-speed Surfshark UK VPN & 5 GHz Wi-Fi Hotspot** with multi-profile WireGuard/OpenVPN switching, leak-proof `nftables` kill-switch, automatic UK failover, and 500+ Mbps LAN gateway support (`vpn/`).
-3. **Mobile Web Hub** (`webui/`) at `http://<pi-ip>:8080` — Phone Photo Uploader, 1-Tap UK VPN, Home Network & Bandwidth Scanner with New-Device Alerts, Pi System Health Bar, Uptime Watchdog & Wake-on-LAN.
+2. **Always-On high-speed Multi-Country VPN & 5 GHz Wi-Fi Hotspot** with 1-tap country switching (UK, Switzerland, Czechia, Spain, Iceland, Mexico, Sweden, etc.), WireGuard/OpenVPN support, leak-proof `nftables` kill-switch, and 500+ Mbps LAN gateway mode (`vpn/`).
+3. **Mobile Web Hub** (`webui/`) at `http://<pi-ip>:8080` — Phone Photo Uploader, Multi-Country VPN & Hotspot Settings (SSID/Password), Home Network & Bandwidth Scanner with New-Device Alerts, Pi System Health Bar, Uptime Watchdog & Wake-on-LAN.
 
 The panel is mounted in portrait: photos are composed at **480 × 800**, rotated
 to the panel's native 800 × 480 size, and changed every **20 minutes**. A new

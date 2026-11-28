@@ -24,7 +24,7 @@
   "hotspot": {
     "enabled": true,
     "interface": "wlan0",
-    "ssid": "RP-UK-VPN",
+    "ssid": "Home-VPN",
     "passphrase": "",
     "country_code": "US",
     "band": "5g",

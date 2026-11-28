@@ -12,6 +12,52 @@ from typing import Any, Optional
 
 from vpn import manager as vm
 
+COUNTRY_NAMES: dict[str, str] = {
+    "GB": "United Kingdom",
+    "UK": "United Kingdom",
+    "US": "United States",
+    "CH": "Switzerland",
+    "CZ": "Czechia",
+    "ES": "Spain",
+    "IS": "Iceland",
+    "MX": "Mexico",
+    "SE": "Sweden",
+    "CA": "Canada",
+    "DE": "Germany",
+    "FR": "France",
+    "NL": "Netherlands",
+    "IT": "Italy",
+    "JP": "Japan",
+    "AU": "Australia",
+    "NO": "Norway",
+    "DK": "Denmark",
+    "FI": "Finland",
+    "IE": "Ireland",
+    "PT": "Portugal",
+    "AT": "Austria",
+    "BE": "Belgium",
+    "PL": "Poland",
+    "SG": "Singapore",
+    "KR": "South Korea",
+    "BR": "Brazil",
+    "IN": "India",
+    "TR": "Turkey",
+}
+
+
+def country_meta(code: str) -> tuple[str, str, str]:
+    """Return (iso2_code, readable_name, flag_emoji) for a 2-letter country code."""
+    raw = (code or "").strip().upper()
+    if raw == "UK":
+        iso = "GB"
+    elif len(raw) == 2 and raw.isalpha():
+        iso = raw
+    else:
+        return ("", "Unknown", "🌐")
+    flag = "".join(chr(0x1F1E6 + ord(ch) - ord("A")) for ch in iso)
+    name = COUNTRY_NAMES.get(iso, iso)
+    return (iso, name, flag)
+
 
 class VpnBridge:
     """Thread-safe controller for reading VPN status, switching configs and benchmarking."""
@@ -113,9 +159,62 @@ class VpnBridge:
                 if rates:
                     wifi_phy_rate = rates[0].strip()
 
+        active_prof = next((p for p in profiles if p.name == active_name), None)
+        raw_country = exit_info.get("country") or (active_prof.country if active_prof else "") or ""
+        act_iso, act_cname, act_flag = country_meta(raw_country)
+
+        # Group imported profiles by country for 1-tap country switching
+        by_country: dict[str, dict[str, Any]] = {}
+        for p in profiles:
+            p_iso, p_cname, p_flag = country_meta(p.country or "")
+            if not p_iso:
+                continue
+            grp = by_country.get(p_iso)
+            if grp is None:
+                by_country[p_iso] = {
+                    "code": p_iso,
+                    "name": p_cname,
+                    "flag": p_flag,
+                    "active": p_iso == act_iso and bool(active_name),
+                    "profile_count": 1,
+                    "primary_profile": p.name,
+                    "_primary_proto": p.protocol,
+                }
+            else:
+                grp["profile_count"] += 1
+                if p.name == active_name:
+                    grp["active"] = True
+                if grp["_primary_proto"] != "wireguard" and p.protocol == "wireguard":
+                    grp["primary_profile"] = p.name
+                    grp["_primary_proto"] = p.protocol
+
+        countries_list = sorted(
+            ({k: v for k, v in g.items() if not k.startswith("_")} for g in by_country.values()),
+            key=lambda g: (0 if g["active"] else 1, g["name"]),
+        )
+
+        profile_rows = []
+        for p in profiles:
+            p_iso, p_cname, p_flag = country_meta(p.country or "")
+            profile_rows.append(
+                {
+                    "name": p.name,
+                    "protocol": p.protocol,
+                    "transport": p.transport,
+                    "country": p_iso or (p.country or "").upper(),
+                    "country_name": p_cname,
+                    "country_flag": p_flag,
+                    "endpoint": f"{p.endpoint_host}:{p.endpoint_port}" if p.endpoint_port else p.endpoint_host,
+                    "active": p.name == active_name,
+                }
+            )
+
         return {
             "desired_state": state.get("desired_state", "running"),
             "active_profile": active_name,
+            "active_country": act_iso,
+            "active_country_name": act_cname,
+            "active_country_flag": act_flag,
             "connected": bool(tun_iface and tun_ip),
             "tunnel_interface": tun_iface or "",
             "tunnel_ip": tun_ip or "",
@@ -135,6 +234,7 @@ class VpnBridge:
                 "up": ap_up,
                 "interface": ap_iface,
                 "ssid": hotspot["ssid"],
+                "has_passphrase": bool(hotspot.get("passphrase")),
                 "band": hotspot["band"],
                 "channel": hotspot["channel"],
                 "vht80": bool(hotspot.get("vht80", True)),
@@ -143,17 +243,8 @@ class VpnBridge:
                 "phy_rate": wifi_phy_rate,
             },
             "lan_gateway_ip": wan_ip if cfg.get("allow_lan_gateway", True) and wan_ip else "",
-            "profiles": [
-                {
-                    "name": p.name,
-                    "protocol": p.protocol,
-                    "transport": p.transport,
-                    "country": (p.country or "").upper(),
-                    "endpoint": f"{p.endpoint_host}:{p.endpoint_port}" if p.endpoint_port else p.endpoint_host,
-                    "active": p.name == active_name,
-                }
-                for p in profiles
-            ],
+            "countries": countries_list,
+            "profiles": profile_rows,
             "benchmark": dict(self._bench_state),
         }
 
@@ -162,6 +253,37 @@ class VpnBridge:
         self._run_privileged(["use", slug], timeout=50)
         self._exit_cache["fetched_at"] = 0.0
         return self.get_status(refresh_exit_ip=True)
+
+    def switch_country(self, country_code: str) -> dict[str, Any]:
+        """Switch VPN to the best available profile in the requested country."""
+        iso, _, _ = country_meta(country_code)
+        if not iso:
+            raise ValueError(f"Invalid country code: {country_code!r}")
+        cfg = vm.load_vpn_config(self.vpn_config_path)
+        profiles = vm.discover_profiles(cfg["_profiles_dir"])
+        matches = [p for p in profiles if country_meta(p.country or "")[0] == iso]
+        if not matches:
+            raise ValueError(f"No imported VPN profiles found for country '{iso}'.")
+        matches.sort(key=lambda p: (0 if p.protocol == "wireguard" else 1, p.name))
+        return self.switch_profile(matches[0].name)
+
+    def update_hotspot(self, ssid: str = "", passphrase: str = "") -> dict[str, Any]:
+        """Update Wi-Fi hotspot network name (SSID) and/or WPA2 passphrase via rp-vpn."""
+        clean_ssid = ssid.strip()
+        clean_pass = passphrase.strip()
+        if not clean_ssid and not clean_pass:
+            raise ValueError("Provide a new Wi-Fi network name (SSID) or password.")
+        args = ["configure-hotspot"]
+        if clean_ssid:
+            if len(clean_ssid) > 32 or not clean_ssid.isprintable():
+                raise ValueError("Wi-Fi name (SSID) must be 1 to 32 printable characters.")
+            args.extend(["--ssid", clean_ssid])
+        if clean_pass:
+            if len(clean_pass) < 8 or len(clean_pass) > 63 or not clean_pass.isprintable():
+                raise ValueError("Wi-Fi password must be 8 to 63 printable ASCII characters.")
+            args.extend(["--passphrase", clean_pass])
+        self._run_privileged(args, timeout=30)
+        return self.get_status()
 
     def action(self, action_name: str) -> dict[str, Any]:
         if action_name not in ("up", "down", "restart", "next"):

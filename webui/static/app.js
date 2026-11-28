@@ -346,30 +346,77 @@
     refreshPreviewImage($("#meta-photo-name").value);
   });
 
-  // -------------------- Tab 2: UK VPN --------------------
+  // -------------------- Tab 2: VPN --------------------
   async function loadVpnStatus(refreshExit = false) {
     const s = await api(`/api/vpn/status${refreshExit ? "?refresh=1" : ""}`);
     const pill = $("#pill-vpn");
     const badge = $("#vpn-state-badge");
+    const banner = $("#vpn-country-banner");
+    const bannerSub = $("#vpn-country-sub");
+
+    const flag = s.active_country_flag || "🌐";
+    const cname = s.active_country_name || s.exit_country || "Unknown";
 
     if (s.connected) {
-      const loc = s.exit_city ? `${s.exit_city}, ${s.exit_country}` : s.active_profile;
-      pill.textContent = `VPN: ${s.active_profile} (${loc})`;
+      const loc = s.exit_city ? `${s.exit_city}, ${cname}` : cname;
+      pill.textContent = `VPN: ${flag} ${s.exit_city || cname}`;
       pill.className = "pill pill-ok";
       badge.textContent = "CONNECTED";
       badge.className = "pill pill-ok";
+      if (banner) banner.textContent = `${flag} Active Country: ${cname}`;
+      if (bannerSub) bannerSub.textContent = `Connected via ${s.active_profile} (${loc}${s.exit_ip ? ` • ${s.exit_ip}` : ""})`;
     } else {
       pill.textContent = "VPN: DOWN";
       pill.className = "pill pill-bad";
       badge.textContent = "DISCONNECTED";
       badge.className = "pill pill-bad";
+      if (banner) banner.textContent = `${flag} VPN Disconnected`;
+      if (bannerSub) bannerSub.textContent = "Select a country below or tap Start to connect.";
+    }
+
+    const cList = $("#vpn-country-list");
+    if (cList) {
+      const countries = s.countries || [];
+      if (!countries.length) {
+        cList.innerHTML = `<p class="muted small">No country profiles imported yet. Import .conf files below.</p>`;
+      } else {
+        cList.innerHTML = countries
+          .map(
+            (c) => `
+          <button type="button" class="country-btn ${c.active ? "active" : ""}" data-switch-country="${esc(c.code)}">
+            <span class="country-flag">${esc(c.flag)}</span>
+            <span>${esc(c.name)}</span>
+            ${c.profile_count > 1 ? `<span class="muted small">(${c.profile_count})</span>` : ""}
+          </button>`
+          )
+          .join("");
+        cList.querySelectorAll("button[data-switch-country]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const code = btn.dataset.switchCountry;
+            btn.disabled = true;
+            try {
+              await api("/api/vpn/country", { method: "POST", json: { country: code } });
+              showToast(`Switched VPN country to ${code}!`);
+              await loadVpnStatus(true);
+            } catch (err) {
+              showToast(err.message, true);
+              await loadVpnStatus();
+            }
+          });
+        });
+      }
     }
 
     const hs = s.handshake_age_seconds != null ? `${s.handshake_age_seconds}s ago` : "—";
     const ap = s.hotspot || {};
+    const ssidInput = $("#hotspot-ssid");
+    if (ssidInput && document.activeElement !== ssidInput && ap.ssid) {
+      ssidInput.value = ap.ssid;
+    }
+
     $("#vpn-kv").innerHTML = `
-      <div class="kv-item"><span>Active Profile</span><strong>${esc(s.active_profile || "None")}</strong></div>
-      <div class="kv-item"><span>Public Exit IP</span><strong>${esc(s.exit_ip || "—")} ${esc(s.exit_country ? `(${s.exit_city}, ${s.exit_country})` : "")}</strong></div>
+      <div class="kv-item"><span>Active Country</span><strong>${esc(flag)} ${esc(cname)} (${esc(s.active_profile || "None")})</strong></div>
+      <div class="kv-item"><span>Public Exit IP</span><strong>${esc(s.exit_ip || "—")} ${esc(s.exit_city ? `(${s.exit_city})` : "")}</strong></div>
       <div class="kv-item"><span>Tunnel (${esc(s.tunnel_interface || "wg-vpn")})</span><strong>${esc(s.tunnel_ip || "down")} • HS ${esc(hs)}</strong></div>
       <div class="kv-item"><span>Tunnel Traffic</span><strong>↓ ${esc(s.rx_human)} / ↑ ${esc(s.tx_human)}</strong></div>
       <div class="kv-item"><span>5GHz Hotspot (${esc(ap.ssid || "-")})</span><strong>${ap.clients || 0} client(s) ${ap.phy_rate ? `• ${esc(ap.phy_rate)}` : ""}</strong></div>
@@ -382,15 +429,15 @@
 
     const pList = $("#vpn-profiles-list");
     if (!s.profiles.length) {
-      pList.innerHTML = `<p class="muted">No profiles imported yet. Upload Surfshark .conf / .ovpn files above.</p>`;
+      pList.innerHTML = `<p class="muted">No profiles imported yet. Upload .conf / .ovpn files above.</p>`;
     } else {
       pList.innerHTML = s.profiles
         .map(
           (p) => `
         <div class="profile-card ${p.active ? "active" : ""}">
           <div>
-            <strong>${esc(p.name)}</strong>
-            <div class="muted small">${esc(p.protocol)} • ${esc(p.country || "?")}</div>
+            <strong>${esc(p.country_flag || "🌐")} ${esc(p.name)}</strong>
+            <div class="muted small">${esc(p.country_name || p.country || "?")} • ${esc(p.protocol)}</div>
           </div>
           <button class="btn ${p.active ? "btn-ghost" : "btn-primary"} btn-sm" data-switch-prof="${esc(p.name)}">
             ${p.active ? "Active" : "Connect"}
@@ -480,6 +527,34 @@
       loadVpnStatus();
     } catch (err) {
       showToast(err.message, true);
+    }
+  });
+
+  $("#hotspot-show-pass").addEventListener("change", () => {
+    $("#hotspot-pass").type = $("#hotspot-show-pass").checked ? "text" : "password";
+  });
+
+  $("#vpn-hotspot-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ssid = $("#hotspot-ssid").value.trim();
+    const passphrase = $("#hotspot-pass").value.trim();
+    if (!ssid && !passphrase) {
+      showToast("Enter a new Wi-Fi name or password.", true);
+      return;
+    }
+    const btn = $("#btn-save-hotspot");
+    btn.disabled = true;
+    btn.textContent = "Applying…";
+    try {
+      await api("/api/vpn/hotspot", { method: "POST", json: { ssid, passphrase } });
+      $("#hotspot-pass").value = "";
+      showToast("Updated Wi-Fi hotspot settings & restarted hotspot!");
+      await loadVpnStatus();
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Save & Restart Hotspot";
     }
   });
 

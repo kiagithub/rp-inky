@@ -59,7 +59,7 @@ DEFAULT_WEBUI_CONFIG: dict[str, Any] = {
             },
             {
                 "id": "uk-vpn",
-                "name": "Surfshark UK VPN Tunnel",
+                "name": "VPN Tunnel",
                 "type": "vpn_tunnel",
                 "host": "1.1.1.1",
                 "builtin": True,
@@ -446,6 +446,22 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 if not profile:
                     raise ValueError("Profile name is required.")
                 self._send_json(self.ctx.vpn_bridge.switch_profile(profile))
+
+            elif path == "/api/vpn/country":
+                body_json = self._read_json_body()
+                country = str(body_json.get("country") or "").strip()
+                if not country:
+                    raise ValueError("Country code is required.")
+                self._send_json(self.ctx.vpn_bridge.switch_country(country))
+
+            elif path == "/api/vpn/hotspot":
+                body_json = self._read_json_body()
+                self._send_json(
+                    self.ctx.vpn_bridge.update_hotspot(
+                        ssid=str(body_json.get("ssid") or ""),
+                        passphrase=str(body_json.get("passphrase") or ""),
+                    )
+                )
 
             elif path == "/api/vpn/action":
                 body_json = self._read_json_body()
