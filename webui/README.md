@@ -29,7 +29,13 @@ A lightweight, zero-bloat web control panel (`http://<pi-ip>:8080`) that runs al
    - **New-Device & Unknown-Device Alerts**: Automatically baselines existing devices on first run, flags brand-new unknown MAC addresses with an amber **`NEW`** badge + **`✓ Trust`** button, and sends a phone push alert via your Watchdog notification channel (toggleable via **🔔 Alert on New Devices**).
    - 1-tap **+ Watch** and **+ WoL** shortcuts on every device row.
 
-5. **ISP, UK VPN & Smart-Home Uptime Watchdog (`📡 Watchdog`)**
+5. **Litter-Robot 4 Dashboard (`🐱 Litter-Robot`)**
+   - Built on [`pylitterbot`](https://github.com/natekspencer/pylitterbot) (optional; auto-installed by `install-webui.sh` or `pip install pylitterbot`).
+   - Live **Waste Drawer %** and **Clean Litter %** gauges, **last cat weight**, **7-day clean cycle bar chart**, and **recent activity timeline**.
+   - **1-Tap Controls**: Start Clean Cycle, Night Light, Panel Lockout, Sleep Mode, and Cycle Wait Time (3 / 7 / 15 / 25 / 30 min).
+   - Automatic **Watchdog push alerts** when the waste drawer reaches your threshold (default 85%) or the robot goes offline.
+
+6. **ISP, VPN & Smart-Home Uptime Watchdog (`📡 Watchdog`)**
    - Built-in 60-second probes for **Home ISP Uplink (`eth0`)**, **Surfshark UK VPN Tunnel (`wg-vpn`)**, and **Pi System Health**, plus custom **ICMP Ping**, **HTTP/HTTPS**, and **TCP Port** monitors for your NAS, router, Plex, or smart-home devices.
    - Visual green/red heartbeat timelines, uptime percentages, and incident log (including new-device and thermal/disk incidents).
    - **Phone Push Alerts** via **ntfy.sh** (free iOS/Android push app, no account required), **Telegram Bot**, **Pushover**, or **Discord/Slack Webhooks**. If your home ISP drops, alerts are queued in memory and delivered as soon as WAN recovers.

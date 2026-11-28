@@ -656,6 +656,98 @@ def test_vpn_country_switcher_and_hotspot_update_endpoints(tmp_path, monkeypatch
     assert invoked[-1] == ["configure-hotspot", "--ssid", "Home-VPN", "--passphrase", "SuperSecretPassword123"]
 
 
+def test_litterrobot_serialization_endpoints_and_alerts(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+
+    from webui import litterrobot as wlr
+
+    class DummyStatus:
+        text = "Ready"
+        value = "RDY"
+
+    class DummyActivity:
+        timestamp = datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc)
+        action = "Clean Cycle Complete"
+
+    class DummyInsight:
+        total_cycles = 21
+        average_cycles = 3.0
+        cycle_history = ((datetime(2026, 11, 28, tzinfo=timezone.utc), 4),)
+
+    class DummyLR4:
+        id = "lr4-001"
+        name = "Kitty Throne"
+        serial = "LR4C123456"
+        model = "Litter-Robot 4"
+        firmware = "1.1.72"
+        is_online = True
+        status = DummyStatus()
+        waste_drawer_level = 90
+        is_waste_drawer_full = False
+        litter_level = 80
+        pet_weight = 11.4
+        night_light_mode_enabled = True
+        panel_lock_enabled = False
+        sleep_mode_enabled = False
+        clean_cycle_wait_time_minutes = 7
+        cycle_count = 312
+
+    serialized = wlr.serialize_robot(DummyLR4(), history=[DummyActivity()], insight=DummyInsight())
+    assert serialized["name"] == "Kitty Throne"
+    assert serialized["waste_drawer_level"] == 90
+    assert serialized["pet_weight"] == 11.4
+    assert serialized["insight"]["average_cycles"] == 3.0
+    assert serialized["history"][0]["action"] == "Clean Cycle Complete"
+
+    for sub in ("photoframe", "vpn", "webui"):
+        (tmp_path / sub).mkdir()
+    cfg_path = tmp_path / "webui" / "config.json"
+    cfg_path.write_text(
+        json.dumps({"port": 8080, "litterrobot": {"username": "cat@example.com", "password": "secret", "alert_drawer_pct": 85}}),
+        encoding="utf-8",
+    )
+    ctx = ws.AppContext(cfg_path)
+
+    async def fake_fetch(_u, _p):
+        return ([serialized], [])
+
+    async def fake_exec(_u, _p, rid, act, val):
+        assert rid == "lr4-001"
+        assert act == "clean"
+        return ([serialized], [])
+
+    monkeypatch.setattr(wlr, "is_pylitterbot_installed", lambda: True)
+    monkeypatch.setattr(ctx.litterrobot, "_fetch_cloud_snapshot", fake_fetch)
+    monkeypatch.setattr(ctx.litterrobot, "_execute_robot_action", fake_exec)
+
+    # GET /api/litterrobot/status returns robots and never leaks password
+    code, body = _dispatch_http(ctx, b"GET /api/litterrobot/status HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+    assert code == 200
+    data = json.loads(body.decode("utf-8"))
+    assert data["robots"][0]["name"] == "Kitty Throne"
+    assert "password" not in data
+
+    # POST /api/litterrobot/action triggers clean
+    act_payload = json.dumps({"robot_id": "lr4-001", "action": "clean"}).encode()
+    req = (
+        b"POST /api/litterrobot/action HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Type: application/json\r\n"
+        b"X-Requested-With: rp-inky\r\n"
+        + f"Content-Length: {len(act_payload)}\r\n\r\n".encode()
+        + act_payload
+    )
+    code2, _ = _dispatch_http(ctx, req)
+    assert code2 == 200
+
+    # Background alert fires at 90% >= 85% threshold
+    fired = []
+    ctx.litterrobot.check_alerts(lambda *args: fired.append(args))
+    assert len(fired) == 1
+    assert "Waste Drawer" in fired[0][2]
+
+
+
 
 
 

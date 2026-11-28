@@ -26,6 +26,7 @@ if str(REPO_ROOT) not in sys.path:
 from photoframe import photoframe as pf  # noqa: E402
 from vpn import manager as vm  # noqa: E402
 from webui import adguard as wag  # noqa: E402
+from webui import litterrobot as wlr  # noqa: E402
 from webui import monitor as wm  # noqa: E402
 from webui import network as wn  # noqa: E402
 from webui import photos as wp  # noqa: E402
@@ -90,6 +91,12 @@ DEFAULT_WEBUI_CONFIG: dict[str, Any] = {
     "adguard": {
         "enabled": True,
         "port": 3000,
+    },
+    "litterrobot": {
+        "username": "",
+        "password": "",
+        "alerts_enabled": True,
+        "alert_drawer_pct": 85,
     },
 }
 
@@ -206,7 +213,12 @@ class AppContext:
             state_dir=cfg["_state_dir"],
             on_new_devices=self._on_new_network_devices,
         )
+        self.litterrobot = wlr.LitterRobotBridge(
+            webui_config_getter=self.get_config,
+            local_config_updater=self.update_local_config,
+        )
         self.monitor.network_scanner = self.network
+        self.monitor.litterrobot_bridge = self.litterrobot
 
     def _on_new_network_devices(self, devices: list[dict[str, Any]]) -> None:
         """Push a Watchdog alert when brand-new unknown device(s) join the Wi-Fi or VPN hotspot."""
@@ -366,6 +378,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(wag.get_adguard_status(port=port))
             elif path == "/api/tailscale/status":
                 self._send_json(wts.get_tailscale_status())
+            elif path == "/api/litterrobot/status":
+                force = (query.get("refresh") or [""])[0] == "1"
+                self._send_json(self.ctx.litterrobot.get_status(force=force))
             else:
                 self._send_json({"error": "Unknown endpoint"}, status=HTTPStatus.NOT_FOUND)
         except (ValueError, FileNotFoundError) as exc:
@@ -537,6 +552,20 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             elif path == "/api/network/settings":
                 body_json = self._read_json_body()
                 self._send_json(self.ctx.network.update_settings(body_json))
+
+            elif path == "/api/litterrobot/config":
+                body_json = self._read_json_body()
+                self._send_json(self.ctx.litterrobot.save_config(body_json))
+
+            elif path == "/api/litterrobot/action":
+                body_json = self._read_json_body()
+                self._send_json(
+                    self.ctx.litterrobot.send_action(
+                        robot_id=str(body_json.get("robot_id") or ""),
+                        action=str(body_json.get("action") or ""),
+                        value=body_json.get("value"),
+                    )
+                )
 
             else:
                 self._send_json({"error": "Unknown endpoint"}, status=HTTPStatus.NOT_FOUND)

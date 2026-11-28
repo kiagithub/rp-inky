@@ -50,6 +50,7 @@
       $(`#tab-${activeTab}`).classList.add("active");
       if (activeTab === "vpn") loadVpnStatus();
       if (activeTab === "network") loadNetwork(false);
+      if (activeTab === "litterrobot") loadLitterRobot(false);
       if (activeTab === "monitor") loadMonitor();
       if (activeTab === "wol") loadWol();
     });
@@ -1134,6 +1135,202 @@
   });
   $("#net-search").addEventListener("input", renderNetworkView);
   $("#net-filter-scope").addEventListener("change", renderNetworkView);
+
+  // -------------------- Tab 4: Litter-Robot 4 --------------------
+  function renderLitterRobot(data) {
+    const installBanner = $("#lr-install-banner");
+    if (installBanner) installBanner.style.display = data.installed ? "none" : "block";
+
+    const userInput = $("#lr-username");
+    if (userInput && document.activeElement !== userInput && data.username) {
+      userInput.value = data.username;
+    }
+    $("#lr-alerts-enabled").checked = data.alerts_enabled !== false;
+    $("#lr-drawer-pct").value = String(data.alert_drawer_pct || 85);
+    $("#btn-lr-disconnect").classList.toggle("hidden", !data.configured);
+
+    const meta = $("#lr-status-meta");
+    if (data.error) {
+      meta.textContent = `Error: ${data.error}`;
+    } else if (data.updated_at) {
+      meta.textContent = `Connected as ${data.username} • Last synced: ${data.updated_at}`;
+    } else if (!data.configured) {
+      meta.textContent = "Enter your Whisker (Litter-Robot) email and password below to connect.";
+    }
+
+    const wrap = $("#lr-robots-wrap");
+    const robots = data.robots || [];
+    if (!data.configured) {
+      wrap.innerHTML = "";
+      return;
+    }
+    if (!robots.length) {
+      wrap.innerHTML = `<div class="card"><p class="muted">${data.error ? esc(data.error) : "No Litter-Robot devices found on this Whisker account."}</p></div>`;
+      return;
+    }
+
+    wrap.innerHTML = robots
+      .map((r) => {
+        const waste = r.waste_drawer_level != null ? r.waste_drawer_level : 0;
+        const wasteLvl = r.is_waste_drawer_full || waste >= (data.alert_drawer_pct || 85) ? "crit" : waste >= 70 ? "warn" : "ok";
+        const litter = r.litter_level != null ? r.litter_level : null;
+        const litterLvl = litter != null ? (litter <= 25 ? "warn" : "ok") : "";
+        const statusCls = !r.is_online || r.is_waste_drawer_full ? "pill-bad" : "pill-ok";
+        const weightStr = r.pet_weight != null ? `${r.pet_weight} lbs` : "—";
+        const avgCycles = r.insight && r.insight.average_cycles != null ? `${r.insight.average_cycles}/day` : "—";
+
+        const days = (r.insight && r.insight.days) || [];
+        const maxDay = Math.max(1, ...days.map((d) => d.cycles || 0));
+        const chartHtml = days.length
+          ? `<div class="lr-chart">${days
+              .map((d) => {
+                const hPct = Math.max(10, Math.round(((d.cycles || 0) / maxDay) * 100));
+                return `<div class="lr-chart-col" title="${esc(d.label)}: ${d.cycles} cycles">
+                  <span class="lr-chart-lbl">${d.cycles}</span>
+                  <div class="lr-chart-bar" style="height:${hPct}%"></div>
+                  <span class="lr-chart-lbl">${esc(d.label)}</span>
+                </div>`;
+              })
+              .join("")}</div>`
+          : "";
+
+        const histHtml = (r.history || []).length
+          ? `<div class="lr-history-list">${r.history
+              .slice(0, 8)
+              .map(
+                (h) => `<div class="lr-history-row"><span>${esc(h.action)}</span><span class="muted">${esc(h.timestamp)}</span></div>`
+              )
+              .join("")}</div>`
+          : `<p class="muted small mt-xs">No recent activity reported yet.</p>`;
+
+        const waitOpts = [3, 7, 15, 25, 30]
+          .map((m) => `<option value="${m}" ${r.wait_time_minutes === m ? "selected" : ""}>Wait: ${m} min</option>`)
+          .join("");
+
+        return `
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2>🐱 ${esc(r.name)}</h2>
+              <p class="muted small">${esc(r.model)}${r.firmware ? ` • FW ${esc(r.firmware)}` : ""}${r.serial ? ` • ${esc(r.serial)}` : ""}</p>
+            </div>
+            <span class="pill ${statusCls}">${esc(r.is_online ? r.status_text : "OFFLINE")}</span>
+          </div>
+
+          <div class="lr-gauges">
+            <div class="lr-gauge-box">
+              <div class="lr-gauge-head"><span>Waste Drawer</span><strong>${r.waste_drawer_level != null ? `${waste}%` : "—"}</strong></div>
+              <div class="lr-bar-track"><div class="lr-bar-fill ${wasteLvl}" style="width:${Math.min(100, Math.max(0, waste))}%"></div></div>
+            </div>
+            <div class="lr-gauge-box">
+              <div class="lr-gauge-head"><span>Clean Litter</span><strong>${litter != null ? `${litter}%` : esc(r.litter_level_state || "—")}</strong></div>
+              <div class="lr-bar-track"><div class="lr-bar-fill ${litterLvl}" style="width:${litter != null ? Math.min(100, Math.max(0, litter)) : 0}%"></div></div>
+            </div>
+            <div class="lr-gauge-box">
+              <div class="lr-gauge-head"><span>Last Cat Weight</span><strong>${esc(weightStr)}</strong></div>
+              <span class="muted small">7-Day Avg: ${esc(avgCycles)}${r.cycle_count != null ? ` • Total: ${r.cycle_count}` : ""}</span>
+            </div>
+          </div>
+
+          <div class="lr-controls">
+            <button type="button" class="btn btn-primary btn-sm" data-lr-act="clean" data-lr-id="${esc(r.id)}">🌀 Start Clean Cycle</button>
+            <button type="button" class="btn ${r.night_light_enabled ? "btn-primary" : "btn-ghost"} btn-sm" data-lr-act="night_light" data-lr-val="${r.night_light_enabled ? "0" : "1"}" data-lr-id="${esc(r.id)}">💡 Night Light: ${r.night_light_enabled ? "ON" : "OFF"}</button>
+            <button type="button" class="btn ${r.panel_lock_enabled ? "btn-primary" : "btn-ghost"} btn-sm" data-lr-act="panel_lock" data-lr-val="${r.panel_lock_enabled ? "0" : "1"}" data-lr-id="${esc(r.id)}">🔒 Panel Lock: ${r.panel_lock_enabled ? "ON" : "OFF"}</button>
+            <button type="button" class="btn ${r.sleep_mode_enabled ? "btn-primary" : "btn-ghost"} btn-sm" data-lr-act="sleep_mode" data-lr-val="${r.sleep_mode_enabled ? "0" : "1"}" data-lr-id="${esc(r.id)}">🌙 Sleep: ${r.sleep_mode_enabled ? "ON" : "OFF"}</button>
+            <select data-lr-wait="${esc(r.id)}" aria-label="Clean cycle wait time">${waitOpts}</select>
+          </div>
+
+          ${chartHtml ? `<div class="mt"><h3 class="small muted">7-Day Clean Cycles</h3>${chartHtml}</div>` : ""}
+          <div class="mt"><h3 class="small muted">Recent Activity</h3>${histHtml}</div>
+        </div>`;
+      })
+      .join("");
+
+    wrap.querySelectorAll("button[data-lr-act]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const rid = btn.dataset.lrId;
+        const act = btn.dataset.lrAct;
+        const val = btn.dataset.lrVal !== undefined ? btn.dataset.lrVal === "1" : null;
+        btn.disabled = true;
+        try {
+          const updated = await api("/api/litterrobot/action", {
+            method: "POST",
+            json: { robot_id: rid, action: act, value: val },
+          });
+          renderLitterRobot(updated);
+          showToast(`Sent '${act}' command to Litter-Robot!`);
+        } catch (err) {
+          showToast(err.message, true);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    wrap.querySelectorAll("select[data-lr-wait]").forEach((sel) => {
+      sel.addEventListener("change", async () => {
+        try {
+          const updated = await api("/api/litterrobot/action", {
+            method: "POST",
+            json: { robot_id: sel.dataset.lrWait, action: "wait_time", value: parseInt(sel.value, 10) },
+          });
+          renderLitterRobot(updated);
+          showToast(`Updated cycle wait time to ${sel.value} min!`);
+        } catch (err) {
+          showToast(err.message, true);
+        }
+      });
+    });
+  }
+
+  async function loadLitterRobot(force = false) {
+    try {
+      const data = await api(force ? "/api/litterrobot/status?refresh=1" : "/api/litterrobot/status");
+      renderLitterRobot(data);
+    } catch (err) {
+      if (force) showToast(err.message, true);
+    }
+  }
+
+  $("#btn-lr-refresh").addEventListener("click", () => loadLitterRobot(true));
+  $("#lr-config-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("#btn-lr-save");
+    btn.disabled = true;
+    btn.textContent = "Connecting…";
+    try {
+      const res = await api("/api/litterrobot/config", {
+        method: "POST",
+        json: {
+          username: $("#lr-username").value.trim(),
+          password: $("#lr-password").value.trim(),
+          alerts_enabled: $("#lr-alerts-enabled").checked,
+          alert_drawer_pct: parseInt($("#lr-drawer-pct").value || "85", 10),
+        },
+      });
+      $("#lr-password").value = "";
+      renderLitterRobot(res);
+      showToast(res.error ? `Saved (error: ${res.error})` : "Connected to Litter-Robot!", Boolean(res.error));
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Save & Connect";
+    }
+  });
+
+  $("#btn-lr-disconnect").addEventListener("click", async () => {
+    if (!confirm("Sign out of your Whisker account on this Pi?")) return;
+    try {
+      const res = await api("/api/litterrobot/config", { method: "POST", json: { clear_credentials: true } });
+      $("#lr-username").value = "";
+      $("#lr-password").value = "";
+      renderLitterRobot(res);
+      showToast("Signed out of Whisker account.");
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
 
   // -------------------- Pi System Health Bar --------------------
   function setHealthItem(sel, text, level = "") {

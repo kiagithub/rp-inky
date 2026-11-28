@@ -50,6 +50,8 @@ rp-inky/
 │   ├── network.py    LAN/Hotspot device scanner, OUI/mDNS fingerprinting, live bandwidth & new-device alerts
 │   ├── system_health.py Pi CPU temp, RAM, SD card & power/thermal throttling telemetry
 │   ├── adguard.py    AdGuard Home local status bridge
+│   ├── tailscale.py  Tailscale remote access status bridge
+│   ├── litterrobot.py Whisker Litter-Robot 4 dashboard & alerts (pylitterbot)
 │   ├── monitor.py    ISP/VPN/LAN/System uptime monitor, push alerts & Wake-on-LAN
 │   └── README.md     Web Hub setup, network scanner & phone notifications guide
 ├── adguard/          AdGuard Home whole-home DNS ad/tracker blocker installer & guide

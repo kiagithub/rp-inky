@@ -70,6 +70,7 @@ if ! "$PYTHON" -c "import PIL" >/dev/null 2>&1; then
     "$PYTHON" -m pip install pillow
 fi
 "$PYTHON" -m pip install --quiet pillow-heif >/dev/null 2>&1 || true
+"$PYTHON" -m pip install --quiet pylitterbot >/dev/null 2>&1 || true
 
 chmod +x "$WEBUI_DIR/server.py"
 

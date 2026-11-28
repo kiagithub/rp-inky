@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0f172a">
   <title>rp-inky Hub — Frame • VPN • Network • Watchdog • WoL</title>
-  <link rel="stylesheet" href="/style.css?v=5">
+  <link rel="stylesheet" href="/style.css?v=6">
 </head>
 <body>
   <header class="topbar">
@@ -38,6 +38,7 @@
     <button class="tab active" data-tab="photos">🖼 Photos</button>
     <button class="tab" data-tab="vpn">🛡 VPN</button>
     <button class="tab" data-tab="network">🌐 Network</button>
+    <button class="tab" data-tab="litterrobot">🐱 Litter-Robot</button>
     <button class="tab" data-tab="monitor">📡 Watchdog</button>
     <button class="tab" data-tab="wol">⚡ Wake-on-LAN</button>
   </nav>
@@ -320,7 +321,55 @@
       </div>
     </section>
 
-    <!-- ==================== TAB 4: WATCHDOG & UPTIME ==================== -->
+    <!-- ==================== TAB 4: LITTER-ROBOT 4 ==================== -->
+    <section id="tab-litterrobot" class="tab-panel">
+      <div class="card" id="lr-install-banner" style="display:none">
+        <h2>Install <code>pylitterbot</code> on Your Raspberry Pi</h2>
+        <p class="muted small mt-xs">The optional <code>pylitterbot</code> package is not installed in this Python environment yet. Run on your Pi:</p>
+        <pre class="code-block mt-xs">~/.virtualenvs/pimoroni/bin/pip install pylitterbot
+sudo systemctl restart inky-webui</pre>
+      </div>
+
+      <div id="lr-robots-wrap" class="stack"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2>Whisker Account &amp; Alerts</h2>
+            <p class="muted small" id="lr-status-meta">Sign in with your Whisker (Litter-Robot) email and password. Stored locally in <code>config.local.json</code> (0600).</p>
+          </div>
+          <button id="btn-lr-refresh" class="btn btn-ghost btn-sm" type="button">⟳ Refresh</button>
+        </div>
+        <form id="lr-config-form" class="stack-sm mt-xs">
+          <div class="row-inputs">
+            <div>
+              <label class="field-label">Whisker Account Email</label>
+              <input type="text" id="lr-username" placeholder="you@example.com" autocomplete="username">
+            </div>
+            <div>
+              <label class="field-label">Whisker Password</label>
+              <input type="password" id="lr-password" placeholder="Leave blank to keep saved password" autocomplete="current-password">
+            </div>
+          </div>
+          <div class="row-inputs">
+            <label class="checkbox-row small">
+              <input type="checkbox" id="lr-alerts-enabled" checked>
+              <span>🔔 Push alert via Watchdog when waste drawer is full or robot goes offline</span>
+            </label>
+            <div>
+              <label class="field-label">Waste Drawer Alert Threshold (%)</label>
+              <input type="number" id="lr-drawer-pct" value="85" min="50" max="100">
+            </div>
+          </div>
+          <div class="btn-row wrap-row">
+            <button type="submit" id="btn-lr-save" class="btn btn-primary btn-sm">Save &amp; Connect</button>
+            <button type="button" id="btn-lr-disconnect" class="btn btn-ghost btn-sm hidden">Sign Out</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 5: WATCHDOG & UPTIME ==================== -->
     <section id="tab-monitor" class="tab-panel">
       <div class="card">
         <div class="card-header">
@@ -507,6 +556,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=8"></script>
+  <script src="/app.js?v=9"></script>
 </body>
 </html>

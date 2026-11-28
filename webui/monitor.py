@@ -300,7 +300,9 @@ class UptimeMonitor:
         self._pending_alerts: list[tuple[str, str]] = []
         self._sys_alert_state: dict[str, bool] = {"temp": False, "disk": False, "throttled": False}
         self._last_net_scan = 0.0
+        self._last_lr_check = 0.0
         self.network_scanner: Any = None
+        self.litterrobot_bridge: Any = None
 
     def start(self) -> None:
         """Start the background periodic probing thread."""
@@ -334,6 +336,11 @@ class UptimeMonitor:
                 self._last_net_scan = time.monotonic()
                 with suppress(Exception):
                     self.network_scanner.scan(active_sweep=False)
+            # Background Litter-Robot drawer/offline alert check every 5 minutes
+            if self.litterrobot_bridge is not None and (time.monotonic() - self._last_lr_check) >= 300.0:
+                self._last_lr_check = time.monotonic()
+                with suppress(Exception):
+                    self.litterrobot_bridge.check_alerts(self.dispatch_external_alert)
             interval = max(15, int(mon_cfg.get("interval_seconds", 60)))
             self._wake_event.wait(interval)
             self._wake_event.clear()
