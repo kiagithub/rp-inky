@@ -558,4 +558,43 @@ def test_adguard_status_endpoint(tmp_path, monkeypatch):
     assert parsed["blocked_pct"] == 22.0
 
 
+def test_tailscale_status_parser_and_endpoint(tmp_path, monkeypatch):
+    from webui import tailscale as wts
+
+    sample = json.dumps(
+        {
+            "BackendState": "Running",
+            "Self": {
+                "HostName": "raspberrypi",
+                "DNSName": "raspberrypi.tail1234.ts.net.",
+                "TailscaleIPs": ["100.88.12.34", "fd7a:115c:a1e0::1"],
+                "ExitNodeOption": True,
+            },
+            "Peer": {
+                "p1": {"Online": True},
+                "p2": {"Online": False},
+            },
+        }
+    )
+    parsed = wts.parse_tailscale_status_json(sample)
+    assert parsed["running"] is True
+    assert parsed["tailscale_ip"] == "100.88.12.34"
+    assert parsed["dns_name"] == "raspberrypi.tail1234.ts.net"
+    assert parsed["online_peers"] == 1
+    assert parsed["peer_count"] == 2
+    assert parsed["exit_node_advertised"] is True
+
+    for sub in ("photoframe", "vpn", "webui"):
+        (tmp_path / sub).mkdir()
+    cfg_path = tmp_path / "webui" / "config.json"
+    cfg_path.write_text(json.dumps({"port": 8080}), encoding="utf-8")
+    ctx = ws.AppContext(cfg_path)
+    monkeypatch.setattr(ws.wts, "get_tailscale_status", lambda: parsed)
+
+    code, body = _dispatch_http(ctx, b"GET /api/tailscale/status HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+    assert code == 200
+    assert json.loads(body.decode("utf-8"))["tailscale_ip"] == "100.88.12.34"
+
+
+
 

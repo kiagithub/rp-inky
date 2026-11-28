@@ -30,6 +30,7 @@ from webui import monitor as wm  # noqa: E402
 from webui import network as wn  # noqa: E402
 from webui import photos as wp  # noqa: E402
 from webui import system_health as sh  # noqa: E402
+from webui import tailscale as wts  # noqa: E402
 from webui import vpn_bridge as wb  # noqa: E402
 
 LOG = logging.getLogger("webui")
@@ -363,6 +364,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 agh_cfg = self.ctx.get_config().get("adguard") or {}
                 port = int(agh_cfg.get("port") or 3000)
                 self._send_json(wag.get_adguard_status(port=port))
+            elif path == "/api/tailscale/status":
+                self._send_json(wts.get_tailscale_status())
             else:
                 self._send_json({"error": "Unknown endpoint"}, status=HTTPStatus.NOT_FOUND)
         except (ValueError, FileNotFoundError) as exc:

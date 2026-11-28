@@ -983,6 +983,28 @@
     }
   }
 
+  async function loadTailscaleStatus() {
+    try {
+      const t = await api("/api/tailscale/status");
+      const valEl = $("#net-stat-ts");
+      const subEl = $("#net-stat-ts-sub");
+      if (!valEl || !subEl) return;
+      if (t.running && t.tailscale_ip) {
+        valEl.textContent = t.tailscale_ip;
+        const peers = `${t.online_peers}/${t.peer_count} peers online`;
+        subEl.textContent = t.dns_name ? `${t.dns_name} • ${peers}` : peers;
+      } else if (t.installed) {
+        valEl.textContent = t.backend_state || "Disconnected";
+        subEl.textContent = "Run sudo tailscale up --accept-dns=false";
+      } else {
+        valEl.textContent = "Not Installed";
+        subEl.textContent = "Run ./tailscale/install-tailscale.sh on Pi";
+      }
+    } catch (_err) {
+      // Non-critical widget
+    }
+  }
+
   async function loadNetwork(sweep = false) {
     const btn = $("#btn-net-sweep");
     if (sweep && btn) {
@@ -993,6 +1015,7 @@
       const [netData] = await Promise.all([
         api(sweep ? "/api/network/devices?sweep=1" : "/api/network/devices"),
         loadAdGuardStatus(),
+        loadTailscaleStatus(),
       ]);
       lastNetworkData = netData;
       renderNetworkView();
