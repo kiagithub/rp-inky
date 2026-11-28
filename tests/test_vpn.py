@@ -277,4 +277,22 @@ def test_nftables_local_dns_blocker_allows_lan_port_53_while_protecting_hotspot(
     assert 'iifname "eth0" ip daddr 192.168.86.30 meta l4proto { udp, tcp } th dport 53 dnat' not in rules
 
 
+def test_discover_profiles_handles_unreadable_root_owned_conf(tmp_path, monkeypatch):
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir()
+    conf = profiles_dir / "ch-zur.conf"
+    conf.write_text("[Interface]\n", encoding="utf-8")
+
+    def deny_read(_path):
+        raise PermissionError(13, "Permission denied", str(_path))
+
+    monkeypatch.setattr(vm, "parse_wireguard_profile", deny_read)
+    found = vm.discover_profiles(profiles_dir)
+    assert len(found) == 1
+    assert found[0].name == "ch-zur"
+    assert found[0].country == "ch"
+    assert found[0].protocol == "wireguard"
+
+
+
 

@@ -542,10 +542,23 @@ def discover_profiles(profiles_dir: Path) -> list[Profile]:
             LOG.warning("Skipping duplicate profile stem %s (%s)", stem, file_path.name)
             continue
         seen_names.add(stem)
-        if file_path.suffix.lower() == ".conf":
-            profiles.append(parse_wireguard_profile(file_path))
-        else:
-            profiles.append(parse_openvpn_profile(file_path))
+        is_wg = file_path.suffix.lower() == ".conf"
+        try:
+            profiles.append(parse_wireguard_profile(file_path) if is_wg else parse_openvpn_profile(file_path))
+        except PermissionError:
+            LOG.debug("Profile %s is root-only (0600); using filename metadata", file_path.name)
+            profiles.append(
+                Profile(
+                    name=stem,
+                    protocol="wireguard" if is_wg else "openvpn",
+                    path=file_path,
+                    endpoint_host="",
+                    endpoint_port=None,
+                    transport="udp",
+                    country=infer_country_tag(stem, ""),
+                    requires_auth=not is_wg,
+                )
+            )
     return sorted(profiles, key=lambda item: item.name)
 
 
@@ -595,6 +608,13 @@ def import_profiles(
 
         content = candidate.read_text(encoding="utf-8", errors="replace")
         write_text_atomic(target, content, mode=0o600)
+        # Keep 0600 privacy while matching repo owner (e.g. non-root webui user) when run under sudo
+        if os.name == "posix" and os.geteuid() == 0:
+            with suppress(OSError):
+                parent_stat = profiles_dir.parent.stat()
+                if parent_stat.st_uid != 0:
+                    os.chown(target, parent_stat.st_uid, parent_stat.st_gid)
+                    os.chown(profiles_dir, parent_stat.st_uid, parent_stat.st_gid)
         profile = parse_wireguard_profile(target) if ext == ".conf" else parse_openvpn_profile(target)
         imported.append(profile)
     return imported
