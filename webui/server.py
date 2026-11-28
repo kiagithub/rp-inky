@@ -25,6 +25,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from photoframe import photoframe as pf  # noqa: E402
 from vpn import manager as vm  # noqa: E402
+from webui import adguard as wag  # noqa: E402
 from webui import monitor as wm  # noqa: E402
 from webui import network as wn  # noqa: E402
 from webui import photos as wp  # noqa: E402
@@ -84,6 +85,10 @@ DEFAULT_WEBUI_CONFIG: dict[str, Any] = {
     "network": {
         "alert_new_devices": True,
         "aliases": {},
+    },
+    "adguard": {
+        "enabled": True,
+        "port": 3000,
     },
 }
 
@@ -354,6 +359,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     self._send_json(self.ctx.network.get_snapshot(max_age_seconds=4.0))
             elif path == "/api/system/health":
                 self._send_json(sh.get_system_health())
+            elif path == "/api/adguard/status":
+                agh_cfg = self.ctx.get_config().get("adguard") or {}
+                port = int(agh_cfg.get("port") or 3000)
+                self._send_json(wag.get_adguard_status(port=port))
             else:
                 self._send_json({"error": "Unknown endpoint"}, status=HTTPStatus.NOT_FOUND)
         except (ValueError, FileNotFoundError) as exc:

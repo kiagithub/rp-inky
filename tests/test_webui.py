@@ -528,3 +528,34 @@ def test_system_health_endpoint_and_watchdog_thermal_disk_alerts(tmp_path, monke
     assert "[RECOVERED] Pi Power/Thermal" in rec_titles
 
 
+def test_adguard_status_endpoint(tmp_path, monkeypatch):
+    for sub in ("photoframe", "vpn", "webui"):
+        (tmp_path / sub).mkdir()
+    cfg_path = tmp_path / "webui" / "config.json"
+    cfg_path.write_text(json.dumps({"port": 8080, "adguard": {"port": 3000}}), encoding="utf-8")
+    ctx = ws.AppContext(cfg_path)
+
+    monkeypatch.setattr(
+        ws.wag,
+        "get_adguard_status",
+        lambda port=3000: {
+            "installed": True,
+            "running": True,
+            "dns_listening": True,
+            "port": port,
+            "auth_required": True,
+            "protection_enabled": True,
+            "version": "v0.107",
+            "dns_queries": 1000,
+            "blocked_filtering": 220,
+            "blocked_pct": 22.0,
+        },
+    )
+    code, body = _dispatch_http(ctx, b"GET /api/adguard/status HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+    assert code == 200
+    parsed = json.loads(body.decode("utf-8"))
+    assert parsed["running"] is True
+    assert parsed["blocked_pct"] == 22.0
+
+
+

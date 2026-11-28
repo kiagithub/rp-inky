@@ -50,6 +50,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "route_table": 52000,
     "dns_servers": ["162.252.172.57", "149.154.159.92"],
     "force_vpn_dns": True,
+    "local_dns_blocker": False,
     "disable_ipv6": True,
     "allow_lan_gateway": True,
     "wireguard": {
@@ -955,6 +956,7 @@ def build_nftables_ruleset(
     hotspot_enabled = bool(hotspot.get("enabled", True))
     allow_lan_gw = bool(config.get("allow_lan_gateway", True))
     force_dns = bool(config.get("force_vpn_dns", True))
+    local_dns_blocker = bool(config.get("local_dns_blocker", False))
     disable_ipv6 = bool(config.get("disable_ipv6", True))
 
     servers = dns_servers or list(config["dns_servers"])
@@ -963,7 +965,7 @@ def build_nftables_ruleset(
     prerouting_rules: list[str] = []
     if force_dns and hotspot_enabled:
         prerouting_rules.append(f'        iifname "{ap_iface}" meta l4proto {{ udp, tcp }} th dport 53 dnat ip to {primary_dns}:53')
-    if force_dns and allow_lan_gw and wan_ipv4:
+    if force_dns and allow_lan_gw and wan_ipv4 and not local_dns_blocker:
         prerouting_rules.append(
             f'        iifname "{wan_iface}" ip daddr {wan_ipv4} meta l4proto {{ udp, tcp }} th dport 53 dnat ip to {primary_dns}:53'
         )

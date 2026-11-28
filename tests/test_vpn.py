@@ -266,3 +266,15 @@ def test_dns_codec_roundtrip_and_endpoint_override(tmp_path):
     assert "Endpoint = 185.108.105.10:51820" in rendered
 
 
+def test_nftables_local_dns_blocker_allows_lan_port_53_while_protecting_hotspot(tmp_path):
+    cfg = vm.load_vpn_config(tmp_path / "config.json")
+    cfg["local_dns_blocker"] = True
+    rules = vm.build_nftables_ruleset(cfg, wan_ipv4="192.168.86.30")
+
+    # Hotspot wlan0 DNS must STILL be forced to Surfshark UK DNS (zero DNS leak)
+    assert 'iifname "wlan0" meta l4proto { udp, tcp } th dport 53 dnat ip to 162.252.172.57:53' in rules
+    # Home LAN eth0 DNS to 192.168.86.30:53 must NOT be DNAT'd away from AdGuard Home
+    assert 'iifname "eth0" ip daddr 192.168.86.30 meta l4proto { udp, tcp } th dport 53 dnat' not in rules
+
+
+

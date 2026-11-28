@@ -49,8 +49,12 @@ rp-inky/
 │   ├── photos.py     camera-roll 480x800 crop uploader & instant frame trigger
 │   ├── network.py    LAN/Hotspot device scanner, OUI/mDNS fingerprinting, live bandwidth & new-device alerts
 │   ├── system_health.py Pi CPU temp, RAM, SD card & power/thermal throttling telemetry
+│   ├── adguard.py    AdGuard Home local status bridge
 │   ├── monitor.py    ISP/VPN/LAN/System uptime monitor, push alerts & Wake-on-LAN
 │   └── README.md     Web Hub setup, network scanner & phone notifications guide
+├── adguard/          AdGuard Home whole-home DNS ad/tracker blocker installer & guide
+│   ├── install-adguard.sh  clean Pi OS installer (port 3000 UI, port 53 DNS, rp-vpn coexistence)
+│   └── README.md     router DNS setup & Surfshark UK VPN coexistence guide
 ├── tests/            offline unit tests (photo frame + VPN + Web Hub)
 ├── install.sh        Raspberry Pi photo frame setup script
 ├── pyproject.toml

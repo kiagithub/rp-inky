@@ -958,6 +958,31 @@
     });
   }
 
+  async function loadAdGuardStatus() {
+    try {
+      const a = await api("/api/adguard/status");
+      const valEl = $("#net-stat-agh");
+      const subEl = $("#net-stat-agh-sub");
+      if (!valEl || !subEl) return;
+      const host = window.location.hostname || "raspberrypi.local";
+      const url = `http://${host}:${a.port || 3000}`;
+      if (a.running) {
+        if (a.dns_queries != null) {
+          valEl.textContent = `${a.blocked_pct ?? 0}% Blocked`;
+          subEl.innerHTML = `${a.blocked_filtering} / ${a.dns_queries} queries • <a href="${esc(url)}" target="_blank" rel="noopener" style="color:var(--primary)">Open :${a.port} ↗</a>`;
+        } else {
+          valEl.textContent = a.dns_listening ? "Active (Port 53)" : "Setup Wizard";
+          subEl.innerHTML = `<a href="${esc(url)}" target="_blank" rel="noopener" style="color:var(--primary)">Open AdGuard Home (:${a.port}) ↗</a>`;
+        }
+      } else {
+        valEl.textContent = "Not Installed";
+        subEl.textContent = "Run ./adguard/install-adguard.sh on Pi";
+      }
+    } catch (_err) {
+      // Non-critical widget
+    }
+  }
+
   async function loadNetwork(sweep = false) {
     const btn = $("#btn-net-sweep");
     if (sweep && btn) {
@@ -965,7 +990,11 @@
       btn.textContent = "Scanning Subnet…";
     }
     try {
-      lastNetworkData = await api(sweep ? "/api/network/devices?sweep=1" : "/api/network/devices");
+      const [netData] = await Promise.all([
+        api(sweep ? "/api/network/devices?sweep=1" : "/api/network/devices"),
+        loadAdGuardStatus(),
+      ]);
+      lastNetworkData = netData;
       renderNetworkView();
       if (sweep) {
         showToast(`Found ${lastNetworkData.summary.total_devices} device(s) on your network!`);
